@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DU & LAF Inventory Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0a0e1a;--surface:#111827;--surface2:#1c2535;--border:#1e293b;--accent:#3b82f6;--accent2:#6366f1;--nm:#ef4444;--sm:#f59e0b;--fm:#22c55e;--text:#e2e8f0;--muted:#64748b;--radius:12px;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'Sora',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+  .header{background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%);border-bottom:1px solid #312e81;padding:22px 40px;display:flex;align-items:center;gap:16px;}
+  .logo{width:44px;height:44px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 0 20px rgba(99,102,241,0.4);flex-shrink:0;}
+  .header-text h1{font-size:20px;font-weight:800;letter-spacing:-0.5px;}
+  .header-text p{font-size:12px;color:var(--muted);margin-top:2px;}
+  .header-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+  .pill{background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3);padding:5px 12px;border-radius:100px;font-size:11px;color:#a5b4fc;font-family:'DM Mono',monospace;}
+  .main{max-width:1400px;margin:0 auto;padding:36px 40px;}
+
+  /* SHARED BANNER */
+  .shared-banner{background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(6,182,212,0.06));border:1px solid rgba(16,185,129,0.2);border-radius:var(--radius);padding:16px 24px;margin-bottom:24px;display:flex;align-items:center;gap:14px;}
+  .shared-banner .sb-icon{font-size:28px;}
+  .shared-banner h3{font-size:14px;font-weight:700;color:#34d399;}
+  .shared-banner p{font-size:12px;color:var(--muted);margin-top:3px;}
+
+  /* UPLOAD */
+  .upload-section{background:var(--surface);border:2px dashed var(--border);border-radius:var(--radius);padding:52px 40px;text-align:center;transition:all .25s;cursor:pointer;position:relative;overflow:hidden;}
+  .upload-section::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(59,130,246,0.04) 0%,transparent 70%);pointer-events:none;}
+  .upload-section.drag-over{border-color:var(--accent);background:rgba(59,130,246,0.06);}
+  .upload-section.has-file{border-color:#22c55e;background:rgba(34,197,94,0.04);}
+  .upload-icon{font-size:44px;margin-bottom:14px;}
+  .upload-section h2{font-size:19px;font-weight:700;margin-bottom:8px;}
+  .upload-section p{color:var(--muted);font-size:13px;}
+  #file-input{display:none;}
+  .file-info{margin-top:14px;background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:8px;padding:10px 18px;display:inline-flex;align-items:center;gap:10px;font-size:13px;}
+
+  /* BUTTONS */
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 24px;border-radius:10px;font-family:'Sora',sans-serif;font-size:14px;font-weight:600;border:none;cursor:pointer;transition:all .2s;text-decoration:none;white-space:nowrap;}
+  .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 20px rgba(99,102,241,0.35);}
+  .btn-primary:hover{transform:translateY(-2px);box-shadow:0 6px 28px rgba(99,102,241,0.5);}
+  .btn-primary:disabled{opacity:0.4;cursor:not-allowed;transform:none;}
+  .btn-download{background:rgba(34,197,94,0.12);color:#4ade80;border:1px solid rgba(34,197,94,0.3);}
+  .btn-download:hover{background:rgba(34,197,94,0.22);}
+  .btn-publish{background:linear-gradient(135deg,#0ea5e9,#06b6d4);color:#fff;box-shadow:0 4px 20px rgba(14,165,233,0.3);}
+  .btn-publish:hover{transform:translateY(-2px);box-shadow:0 6px 28px rgba(14,165,233,0.5);}
+  .btn-publish:disabled{opacity:0.4;cursor:not-allowed;transform:none;}
+  .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border);}
+  .btn-ghost:hover{border-color:var(--text);color:var(--text);}
+  .btn-sm{padding:8px 16px;font-size:12px;}
+  .actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px;justify-content:center;}
+
+  /* PROGRESS */
+  .progress-wrap{margin:28px 0;display:none;}
+  .progress-wrap.visible{display:block;}
+  .progress-bar-bg{background:var(--surface2);border-radius:100px;height:7px;overflow:hidden;}
+  .progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:100px;transition:width .35s ease;width:0%;}
+  .progress-label{font-size:12px;color:var(--muted);margin-bottom:7px;}
+
+  /* MODAL */
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.78);backdrop-filter:blur(8px);z-index:1000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .25s;}
+  .modal-overlay.open{opacity:1;pointer-events:all;}
+  .modal{background:#151f30;border:1px solid var(--border);border-radius:18px;padding:36px;width:520px;max-width:92vw;transform:scale(.95) translateY(20px);transition:all .3s;box-shadow:0 24px 80px rgba(0,0,0,0.6);}
+  .modal-overlay.open .modal{transform:scale(1) translateY(0);}
+  .modal-icon{font-size:42px;margin-bottom:16px;}
+  .modal h2{font-size:21px;font-weight:800;margin-bottom:10px;}
+  .modal-sub{font-size:13px;color:var(--muted);line-height:1.75;margin-bottom:22px;}
+  .modal-divider{height:1px;background:var(--border);margin:22px 0;}
+  .form-group{margin-bottom:16px;}
+  .form-group label{display:block;font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.6px;}
+  .form-group input,.form-group textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:10px 14px;color:var(--text);font-family:'Sora',sans-serif;font-size:13px;outline:none;transition:border-color .2s;}
+  .form-group input:focus,.form-group textarea:focus{border-color:var(--accent);}
+  .form-group textarea{resize:vertical;min-height:68px;}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:6px;}
+
+  /* SHARE LINK */
+  .link-box{background:var(--surface2);border:1px solid rgba(6,182,212,0.3);border-radius:10px;padding:13px 16px;display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+  .link-box input{flex:1;background:transparent;border:none;color:#67e8f9;font-family:'DM Mono',monospace;font-size:11px;outline:none;min-width:0;}
+  .copy-btn{flex-shrink:0;background:rgba(6,182,212,0.15);border:1px solid rgba(6,182,212,0.3);color:#67e8f9;padding:6px 13px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:'Sora',sans-serif;transition:all .15s;}
+  .copy-btn:hover{background:rgba(6,182,212,0.3);}
+  .copy-btn.copied{background:rgba(34,197,94,0.2);border-color:rgba(34,197,94,0.3);color:#4ade80;}
+
+  /* PUBLISH STATUS STEPS */
+  .pub-step{text-align:center;}
+  .pub-step h2{font-size:20px;font-weight:800;margin-bottom:10px;}
+  .pub-step p{font-size:13px;color:var(--muted);margin-top:8px;}
+  .pub-spin{font-size:48px;animation:spin 1.2s linear infinite;display:block;margin-bottom:16px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* INFO CHIPS */
+  .info-chip{display:inline-flex;align-items:center;gap:6px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2);border-radius:100px;padding:5px 12px;font-size:11px;color:#93c5fd;margin-bottom:18px;}
+
+  /* REPORT META */
+  .report-meta-bar{display:flex;align-items:center;gap:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 20px;margin-bottom:22px;flex-wrap:wrap;}
+  .meta-item{display:flex;flex-direction:column;gap:2px;}
+  .meta-label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
+  .meta-val{font-size:13px;font-weight:700;}
+  .meta-sep{width:1px;height:34px;background:var(--border);}
+
+  /* DASHBOARD */
+  .dashboard{display:none;margin-top:36px;}
+  .dashboard.visible{display:block;}
+  .section-title{font-size:17px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;gap:10px;}
+  .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+  .tabs{display:flex;gap:4px;background:var(--surface);border-radius:10px;padding:4px;margin-bottom:22px;width:fit-content;}
+  .tab{padding:8px 18px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--muted);transition:all .2s;font-family:'Sora',sans-serif;}
+  .tab.active{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;}
+
+  /* KPI */
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:28px;}
+  .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;position:relative;overflow:hidden;}
+  .kpi-card::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;}
+  .kpi-card.nm::before{background:var(--nm);}
+  .kpi-card.sm::before{background:var(--sm);}
+  .kpi-card.fm::before{background:var(--fm);}
+  .kpi-card.total::before{background:var(--accent);}
+  .kpi-label{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;}
+  .kpi-value{font-size:24px;font-weight:800;margin:5px 0 3px;font-family:'DM Mono',monospace;}
+  .kpi-sub{font-size:11px;color:var(--muted);}
+  .kpi-badge{position:absolute;top:14px;right:14px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px;}
+  .kpi-card.nm .kpi-badge{background:rgba(239,68,68,0.15);color:#f87171;}
+  .kpi-card.sm .kpi-badge{background:rgba(245,158,11,0.15);color:#fbbf24;}
+  .kpi-card.fm .kpi-badge{background:rgba(34,197,94,0.15);color:#4ade80;}
+  .kpi-card.total .kpi-badge{background:rgba(59,130,246,0.15);color:#60a5fa;}
+  .charts-row{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:28px;}
+  .chart-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;}
+  .chart-title{font-size:12px;font-weight:600;margin-bottom:18px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+  .donut-wrap{display:flex;align-items:center;gap:22px;}
+  .legend{display:flex;flex-direction:column;gap:9px;}
+  .legend-item{display:flex;align-items:center;gap:9px;font-size:12px;}
+  .legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .legend-val{margin-left:auto;font-weight:700;font-family:'DM Mono',monospace;font-size:11px;}
+  .bar-row{margin-bottom:12px;}
+  .bar-label-row{display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;color:var(--muted);}
+  .bar-track{background:var(--surface2);border-radius:100px;height:7px;overflow:hidden;}
+  .bar-fill{height:100%;border-radius:100px;transition:width 1s ease;}
+  .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:22px;}
+  .table-header-row{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px;}
+  .table-header-row h3{font-size:14px;font-weight:700;}
+  .filter-row{display:flex;gap:6px;}
+  .filter-btn{padding:5px 12px;border-radius:100px;font-size:11px;font-weight:600;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;font-family:'Sora',sans-serif;}
+  .filter-btn.active-nm{background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.4);color:#f87171;}
+  .filter-btn.active-sm{background:rgba(245,158,11,0.15);border-color:rgba(245,158,11,0.4);color:#fbbf24;}
+  .filter-btn.active-all{background:rgba(59,130,246,0.15);border-color:rgba(59,130,246,0.4);color:#60a5fa;}
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  thead th{background:var(--surface2);padding:9px 13px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);white-space:nowrap;}
+  tbody tr{border-bottom:1px solid var(--border);transition:background .1s;}
+  tbody tr:hover{background:rgba(255,255,255,0.03);}
+  tbody td{padding:9px 13px;}
+  .badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:100px;font-size:10px;font-weight:600;white-space:nowrap;}
+  .badge-nm{background:rgba(239,68,68,0.15);color:#f87171;}
+  .badge-sm{background:rgba(245,158,11,0.15);color:#fbbf24;}
+  .badge-fm{background:rgba(34,197,94,0.15);color:#4ade80;}
+  .mono{font-family:'DM Mono',monospace;}
+  .pagination{display:flex;align-items:center;justify-content:space-between;padding:12px 22px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);}
+  .pag-btns{display:flex;gap:5px;}
+  .pag-btn{padding:5px 11px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:11px;font-family:'Sora',sans-serif;transition:all .15s;}
+  .pag-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .pag-btn:disabled{opacity:0.3;cursor:not-allowed;}
+  .search-box{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 13px;color:var(--text);font-size:12px;font-family:'Sora',sans-serif;outline:none;width:200px;}
+  .search-box:focus{border-color:var(--accent);}
+  .tab-content{display:none;}
+  .tab-content.active{display:block;}
+  .toast{position:fixed;bottom:28px;right:28px;background:#1e293b;border:1px solid var(--border);border-radius:10px;padding:14px 20px;font-size:13px;z-index:9999;transform:translateY(80px);opacity:0;transition:all .3s;display:flex;align-items:center;gap:10px;box-shadow:0 8px 32px rgba(0,0,0,0.5);max-width:360px;}
+  .toast.show{transform:translateY(0);opacity:1;}
+  .toast.success{border-color:rgba(34,197,94,0.4);color:#4ade80;}
+  .toast.info{border-color:rgba(59,130,246,0.4);color:#93c5fd;}
+  .toast.error{border-color:rgba(239,68,68,0.4);color:#f87171;}
+  @media(max-width:900px){.main{padding:20px;}.charts-row{grid-template-columns:1fr;}.header{padding:18px 20px;}.modal{padding:24px;}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">📦</div>
+  <div class="header-text">
+    <h1>DU & LAF Inventory Analyzer</h1>
+    <p>Dead Units · Slow Moving · Non Moving Classification Engine</p>
+  </div>
+  <div class="header-right">
+    <div class="pill" id="version-pill">v2.1 · GitHub Pages</div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- SHARED BANNER -->
+  <div class="shared-banner" id="shared-banner" style="display:none">
+    <div class="sb-icon">🔗</div>
+    <div>
+      <h3>Shared Report</h3>
+      <p id="shared-meta-text">Loading report...</p>
+    </div>
+  </div>
+
+  <!-- UPLOAD SECTION -->
+  <div id="upload-section-wrap">
+    <div class="upload-section" id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div class="upload-icon">📁</div>
+      <h2>Drop your Excel file here</h2>
+      <p>Supports .xlsx files with DU and LAF sheets (columns A–R) · Click or drag & drop</p>
+      <input type="file" id="file-input" accept=".xlsx,.xls">
+      <div class="file-info" id="file-info" style="display:none"><span>✅</span><span id="file-name"></span></div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary" id="process-btn" disabled onclick="processFile()">⚙️ Process Data</button>
+      <a class="btn btn-download" id="download-btn" style="display:none" href="#" download>⬇️ Download Excel</a>
+      <button class="btn btn-publish" id="publish-btn" style="display:none" onclick="openModal()">🚀 Publish & Share</button>
+    </div>
+  </div>
+
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-label" id="progress-label">Initializing...</div>
+    <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-fill"></div></div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="dashboard" id="dashboard">
+    <div class="report-meta-bar" id="report-meta-bar" style="display:none">
+      <div class="meta-item"><div class="meta-label">Report Title</div><div class="meta-val" id="meta-title">—</div></div>
+      <div class="meta-sep"></div>
+      <div class="meta-item"><div class="meta-label">Published By</div><div class="meta-val" id="meta-author">—</div></div>
+      <div class="meta-sep"></div>
+      <div class="meta-item"><div class="meta-label">Period</div><div class="meta-val" id="meta-period">—</div></div>
+      <div class="meta-sep"></div>
+      <div class="meta-item"><div class="meta-label">Published On</div><div class="meta-val" id="meta-date">—</div></div>
+    </div>
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('summary',event)">📊 Summary</button>
+      <button class="tab" onclick="switchTab('du',event)">🏪 DU Data</button>
+      <button class="tab" onclick="switchTab('laf',event)">📋 LAF Data</button>
+    </div>
+    <div class="tab-content active" id="tab-summary">
+      <div class="section-title">DU (Dead / Dormant Units) Overview</div>
+      <div class="kpi-grid" id="du-kpis"></div>
+      <div class="charts-row">
+        <div class="chart-card"><div class="chart-title">DU Classification Split (Value ₹)</div><div class="donut-wrap"><svg id="du-donut" width="130" height="130" viewBox="0 0 130 130"></svg><div class="legend" id="du-legend"></div></div></div>
+        <div class="chart-card"><div class="chart-title">DU by Department (Value ₹)</div><div id="du-bar"></div></div>
+      </div>
+      <div class="section-title">LAF (Low Activity / Slow & Non Moving) Overview</div>
+      <div class="kpi-grid" id="laf-kpis"></div>
+      <div class="charts-row">
+        <div class="chart-card"><div class="chart-title">LAF Classification Split (Value ₹)</div><div class="donut-wrap"><svg id="laf-donut" width="130" height="130" viewBox="0 0 130 130"></svg><div class="legend" id="laf-legend"></div></div></div>
+        <div class="chart-card"><div class="chart-title">LAF by Department (Value ₹)</div><div id="laf-bar"></div></div>
+      </div>
+      <div class="section-title">Detailed Summary Tables</div>
+      <div class="table-wrap"><div class="table-header-row"><h3>DU — Department-wise Breakdown</h3></div><div style="overflow-x:auto"><table id="du-sum-table"></table></div></div>
+      <div class="table-wrap"><div class="table-header-row"><h3>LAF — Department-wise Breakdown</h3></div><div style="overflow-x:auto"><table id="laf-sum-table"></table></div></div>
+    </div>
+    <div class="tab-content" id="tab-du">
+      <div class="table-wrap">
+        <div class="table-header-row"><h3>DU — Full Dataset</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="search-box" id="du-search" placeholder="🔍 Search item / molecule..." oninput="renderTable('du')"><div class="filter-row"><button class="filter-btn active-all" onclick="setFilter('du','ALL',this)">All</button><button class="filter-btn" onclick="setFilter('du','NON MOVING',this)">🔴 NM</button><button class="filter-btn" onclick="setFilter('du','SLOW MOVING',this)">🟡 SM</button><button class="filter-btn" onclick="setFilter('du','FAST MOVING',this)">🟢 FM</button></div></div></div>
+        <div style="overflow-x:auto"><table id="du-table"></table></div>
+        <div class="pagination" id="du-pagination"></div>
+      </div>
+    </div>
+    <div class="tab-content" id="tab-laf">
+      <div class="table-wrap">
+        <div class="table-header-row"><h3>LAF — Full Dataset</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="search-box" id="laf-search" placeholder="🔍 Search item / molecule..." oninput="renderTable('laf')"><div class="filter-row"><button class="filter-btn active-all" onclick="setFilter('laf','ALL',this)">All</button><button class="filter-btn" onclick="setFilter('laf','NON MOVING',this)">🔴 NM</button><button class="filter-btn" onclick="setFilter('laf','SLOW MOVING',this)">🟡 SM</button><button class="filter-btn" onclick="setFilter('laf','FAST MOVING',this)">🟢 FM</button></div></div></div>
+        <div style="overflow-x:auto"><table id="laf-table"></table></div>
+        <div class="pagination" id="laf-pagination"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ PUBLISH MODAL ═══════ -->
+<div class="modal-overlay" id="pub-modal">
+  <div class="modal">
+
+    <!-- STEP 1: FORM -->
+    <div id="step-form">
+      <div class="modal-icon">🚀</div>
+      <h2>Publish & Share Report</h2>
+      <p class="modal-sub">Report publish hone ke baad ek <strong style="color:#67e8f9">unique shareable link</strong> milega. Jis bhi ko bhejo, woh directly poora dashboard dekh payega — bina koi file upload kiye.</p>
+      <div class="info-chip">🔒 Data securely encoded in the link itself</div>
+      <div class="form-group"><label>Report Title</label><input id="pub-title" placeholder="e.g. DU & LAF Report — March 2026" value="DU & LAF Inventory Report"></div>
+      <div class="form-group"><label>Published By</label><input id="pub-author" placeholder="e.g. Pharmacy Dept · Dr. Sharma"></div>
+      <div class="form-group"><label>Report Period</label><input id="pub-period" placeholder="e.g. March 2026 / Q4 FY2026"></div>
+      <div class="form-group"><label>Notes (optional)</label><textarea id="pub-notes" placeholder="Any context or remarks for the viewer..."></textarea></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-publish btn-sm" onclick="doPublish()">🚀 Generate Link</button>
+      </div>
+    </div>
+
+    <!-- STEP 2: PUBLISHING -->
+    <div id="step-publishing" class="pub-step" style="display:none">
+      <span class="pub-spin">⚙️</span>
+      <h2>Preparing Report...</h2>
+      <p>Data compress aur encode ho raha hai...</p>
+      <div style="margin-top:20px"><div class="progress-bar-bg"><div class="progress-bar-fill" id="pub-prog" style="width:0%"></div></div></div>
+    </div>
+
+    <!-- STEP 3: SUCCESS -->
+    <div id="step-done" style="display:none">
+      <div class="modal-icon">🎉</div>
+      <h2>Report Published!</h2>
+      <p class="modal-sub">Link copy karke WhatsApp, Email ya kisi bhi platform par share karo. Link open karte hi poora dashboard directly dikhega.</p>
+      <div class="modal-divider"></div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;font-weight:700;letter-spacing:.5px">Your Shareable Link</div>
+      <div class="link-box"><input id="share-link" readonly><button class="copy-btn" id="copy-btn" onclick="copyLink()">Copy</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-publish btn-sm" onclick="copyLink()">📋 Copy Link</button>
+        <button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>
+      </div>
+      <div style="margin-top:16px;padding:12px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:8px;font-size:11px;color:#fbbf24;line-height:1.6">
+        ⚠️ <strong>Note:</strong> Link mein data embedded hai. Link lamba hoga — yahi expected hai. WhatsApp/Email pe properly share hoga.
+      </div>
+    </div>
+
+    <!-- STEP 4: ERROR -->
+    <div id="step-error" style="display:none">
+      <div class="modal-icon">❌</div>
+      <h2>Something went wrong</h2>
+      <p id="err-msg" class="modal-sub" style="color:#f87171"></p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>
+        <button class="btn btn-publish btn-sm" onclick="doPublish()">Retry</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ══ STATE ══ */
+let processedDU=[], processedLAF=[];
+const pageState={du:1,laf:1,pageSize:50}, filterState={du:'ALL',laf:'ALL'};
+const SM_THRESHOLD=0.10;
+
+/* ══ ON LOAD ══ */
+window.addEventListener('DOMContentLoaded',()=>{
+  const rid = new URLSearchParams(window.location.search).get('report');
+  if(rid) loadSharedReport(rid);
+});
+
+/* ══ FILE UPLOAD ══ */
+const dz=document.getElementById('drop-zone'), fi=document.getElementById('file-input');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag-over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag-over'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag-over');if(e.dataTransfer.files[0])setFile(e.dataTransfer.files[0]);});
+fi.addEventListener('change',e=>{if(e.target.files[0])setFile(e.target.files[0]);});
+function setFile(f){
+  window._rawFile=f;
+  dz.classList.add('has-file');
+  document.getElementById('file-info').style.display='inline-flex';
+  document.getElementById('file-name').textContent=f.name+' ('+(f.size/1024).toFixed(0)+' KB)';
+  document.getElementById('process-btn').disabled=false;
+}
+
+/* ══ FORMULA ENGINE ══ */
+function pct(a,b){return b!==0?a/b:0;}
+function cls(sell,p){if(sell<=0)return'NON MOVING';if(p<=SM_THRESHOLD)return'SLOW MOVING';return'FAST MOVING';}
+function rmk(ic,mc){return ic===mc?ic:'FALSE';}
+
+function processLAF(rows){
+  rows.forEach(r=>{r.IN_ITEMS=(r.OPENING||0)+(r.PURCHASE||0)+(r['Dept Transfer In']||0)+(r['ST Dept In']||0)+(r['Add QTY']||0);r.SELL_ITEMS=(r.SELLING||0)-(r['SELLING RETURN']||0);});
+  const mol={};
+  rows.forEach(r=>{const k=String(r.MOLECULE);if(!mol[k])mol[k]={i:0,s:0};mol[k].i+=r.IN_ITEMS;mol[k].s+=r.SELL_ITEMS;});
+  rows.forEach(r=>{const k=String(r.MOLECULE),mp=pct(mol[k].s,mol[k].i);r['ALL IN']=mol[k].i;r['ALL SELL']=mol[k].s;r['MOVING_ITEM %']=pct(r.SELL_ITEMS,r.IN_ITEMS);r['SM & NM_ITEMWISE']=cls(r['ALL SELL'],mp);r['MOLECULE IN']=mol[k].i;r['MOLECULE SELL']=mol[k].s;r['MOVING_MOL %']=mp;r['SM & NM_MOL WISE']=cls(mol[k].s,mp);r.VALUE=r.COSTING||0;r.REMARK=rmk(r['SM & NM_ITEMWISE'],r['SM & NM_MOL WISE']);});
+  return rows;
+}
+function processDU(rows){
+  rows.forEach(r=>{r.IN_ITEMS=(r.OPENING||0)+(r.PURCHASE||0)+(r['Dept Transfer In']||0)+(r['ST Dept In']||0)+(r['Add QTY']||0);r.SELL_ITEMS=(r.SELLING||0)-(r['SELLING RETURN']||0);r['MOVING_ITEM %']=pct(r.SELL_ITEMS,r.IN_ITEMS);r['SM & NM_ITEMWISE']=cls(r.SELL_ITEMS,r['MOVING_ITEM %']);});
+  const mol={};
+  rows.forEach(r=>{const k=String(r.MOLECULE);if(!mol[k])mol[k]={i:0,s:0};mol[k].i+=r.IN_ITEMS;mol[k].s+=r.SELL_ITEMS;});
+  rows.forEach(r=>{const k=String(r.MOLECULE),mp=pct(mol[k].s,mol[k].i);r['MOLECULE IN']=mol[k].i;r['MOLECULE SELL']=mol[k].s;r['MOVING_MOL %']=mp;r['SM & NM_MOL WISE']=cls(mol[k].s,mp);r.VALUE=r.COSTING||0;r.REMARK=rmk(r['SM & NM_ITEMWISE'],r['SM & NM_MOL WISE']);});
+  return rows;
+}
+
+/* ══ PROCESS FILE ══ */
+async function processFile(){
+  if(!window._rawFile)return;
+  setProg(true,'Reading Excel...',10);
+  const reader=new FileReader();
+  reader.onload=async function(e){
+    try{
+      setProg(true,'Parsing sheets...',25);
+      const wb=XLSX.read(e.target.result,{type:'binary'});
+      const ls=wb.SheetNames.find(s=>s.toUpperCase().includes('LAF'));
+      const ds=wb.SheetNames.find(s=>s.toUpperCase().includes('DU'));
+      if(!ls||!ds)throw new Error('LAF or DU sheet not found in this file.');
+      const lafC=['#','ICODE','ITEM NAME','OPENING','PURCHASE','SELLING','RETURN TO PARTY','SELLING RETURN','CLOSING','COSTING','Dept Transfer In','Dept Transfer Out','ST Dept In','ST Dept Out','REDUCE QTY','Add QTY','ITYPE','MOLECULE'];
+      const duC=['#','ICODE','ITEM NAME','OPENING','PURCHASE','SELLING','RETURN TO PARTY','SELLING RETURN','CLOSING','COSTING','Dept Transfer In','Dept Transfer Out','ST Dept In','ST Dept Out','REDUCE/WARD ISSUE QTY','Add QTY','ITYPE','MOLECULE'];
+      function keepCols(rows,cols){return rows.map(r=>{const o={},keys=Object.keys(r).slice(0,18);keys.forEach((k,i)=>{o[cols[i]||k]=r[k];});return o;});}
+      setProg(true,'Computing...',60);await sleep(20);
+      processedLAF=processLAF(keepCols(XLSX.utils.sheet_to_json(wb.Sheets[ls],{defval:0}),lafC));
+      processedDU=processDU(keepCols(XLSX.utils.sheet_to_json(wb.Sheets[ds],{defval:0}),duC));
+      setProg(true,'Generating Excel...',82);await sleep(20);
+      const outWB=genExcel(processedDU,processedLAF);
+      const blob=b64Blob(XLSX.write(outWB,{type:'base64',bookType:'xlsx'}),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      const dl=document.getElementById('download-btn');
+      dl.href=URL.createObjectURL(blob);dl.download='DU_LAF_'+new Date().toISOString().slice(0,10)+'.xlsx';dl.style.display='inline-flex';
+      setProg(true,'Rendering...',95);await sleep(20);
+      renderAll();
+      setProg(false,'',100);
+      document.getElementById('dashboard').classList.add('visible');
+      document.getElementById('publish-btn').style.display='inline-flex';
+    }catch(err){setProg(false,'',0);showToast('❌ '+err.message,'error');}
+  };
+  reader.readAsBinaryString(window._rawFile);
+}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+/* ══ EXCEL GEN ══ */
+function genExcel(du,laf){
+  const wb=XLSX.utils.book_new(),ms=d=>XLSX.utils.json_to_sheet(d);
+  XLSX.utils.book_append_sheet(wb,ms(du),'DU DATA');
+  XLSX.utils.book_append_sheet(wb,ms(laf),'LAF DATA');
+  XLSX.utils.book_append_sheet(wb,ms(du.filter(r=>r.REMARK==='NON MOVING'||r.REMARK==='SLOW MOVING')),'DU NM & SM');
+  XLSX.utils.book_append_sheet(wb,ms(laf.filter(r=>r.REMARK==='NON MOVING'||r.REMARK==='SLOW MOVING')),'LAF NM & SM');
+  XLSX.utils.book_append_sheet(wb,buildSumSheet(buildSumData(du,laf)),'SUMMARY');
+  return wb;
+}
+function buildSumData(du,laf){
+  function pivot(data){
+    const types=[...new Set(data.map(r=>r.ITYPE))].sort();
+    const rows=types.map(t=>{const sub=data.filter(r=>r.ITYPE===t),tot=sub.reduce((a,r)=>a+(r.VALUE||0),0),nm=sub.filter(r=>r.REMARK==='NON MOVING').reduce((a,r)=>a+(r.VALUE||0),0),sm=sub.filter(r=>r.REMARK==='SLOW MOVING').reduce((a,r)=>a+(r.VALUE||0),0);return{ITYPE:t,'Grand Total':tot,'NON MOVING':nm,'NM %':tot?nm/tot:0,'SLOW MOVING':sm,'SM %':tot?sm/tot:0,TOTAL:nm+sm,'TOTAL %':tot?(nm+sm)/tot:0};});
+    const t=rows.reduce((a,r)=>{a['Grand Total']+=r['Grand Total'];a['NON MOVING']+=r['NON MOVING'];a['SLOW MOVING']+=r['SLOW MOVING'];return a;},{ITYPE:'TOTAL','Grand Total':0,'NON MOVING':0,'SLOW MOVING':0});
+    t.TOTAL=t['NON MOVING']+t['SLOW MOVING'];t['NM %']=t['Grand Total']?t['NON MOVING']/t['Grand Total']:0;t['SM %']=t['Grand Total']?t['SLOW MOVING']/t['Grand Total']:0;t['TOTAL %']=t['Grand Total']?t.TOTAL/t['Grand Total']:0;rows.push(t);return rows;
+  }
+  return{du:pivot(du),laf:pivot(laf)};
+}
+function buildSumSheet(sd){
+  const h=['ITYPE','Grand Total','NON MOVING','%','SLOW MOVING','%','TOTAL','%'],aoa=[['DU SM & NM SUMMARY'],h];
+  sd.du.forEach(r=>aoa.push([r.ITYPE,r['Grand Total'],r['NON MOVING'],r['NM %'],r['SLOW MOVING'],r['SM %'],r.TOTAL,r['TOTAL %']]));
+  aoa.push([],['LAF SM & NM SUMMARY'],h);
+  sd.laf.forEach(r=>aoa.push([r.ITYPE,r['Grand Total'],r['NON MOVING'],r['NM %'],r['SLOW MOVING'],r['SM %'],r.TOTAL,r['TOTAL %']]));
+  return XLSX.utils.aoa_to_sheet(aoa);
+}
+function b64Blob(b64,mime){const bin=atob(b64),buf=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)buf[i]=bin.charCodeAt(i);return new Blob([buf],{type:mime});}
+
+/* ══════════════════════════════════════════
+   PUBLISH & SHARE SYSTEM
+   Strategy: compress data → base64 encode → embed in URL ?report=
+   Viewer opens URL → decode → render dashboard instantly
+══════════════════════════════════════════ */
+function openModal(){showStep('form');document.getElementById('pub-modal').classList.add('open');}
+function closeModal(){document.getElementById('pub-modal').classList.remove('open');setTimeout(()=>showStep('form'),300);}
+function showStep(s){['form','publishing','done','error'].forEach(x=>document.getElementById('step-'+x).style.display=x===s?'':'none');}
+
+async function doPublish(){
+  const title=document.getElementById('pub-title').value.trim()||'DU & LAF Report';
+  const author=document.getElementById('pub-author').value.trim()||'—';
+  const period=document.getElementById('pub-period').value.trim()||'—';
+  const notes=document.getElementById('pub-notes').value.trim();
+
+  showStep('publishing');
+  // Animate progress bar
+  let p=0; const bar=document.getElementById('pub-prog');
+  const iv=setInterval(()=>{p=Math.min(p+8,88);bar.style.width=p+'%';},150);
+
+  try{
+    await sleep(200);
+    const payload={
+      v:2,
+      meta:{title,author,period,notes,at:new Date().toISOString()},
+      summary:buildSumData(processedDU,processedLAF),
+      duStats:calcStats(processedDU),
+      lafStats:calcStats(processedLAF),
+      du:slim(processedDU),
+      laf:slim(processedLAF)
+    };
+
+    const json=JSON.stringify(payload);
+    const compressed=miniCompress(json);
+    const encoded=btoa(unescape(encodeURIComponent(compressed)));
+
+    clearInterval(iv); bar.style.width='100%'; await sleep(200);
+
+    const shareUrl=window.location.origin+window.location.pathname+'?report='+encoded;
+    document.getElementById('share-link').value=shareUrl;
+    showStep('done');
+    showToast('✅ Report published! Link ready to share.','success');
+  }catch(err){
+    clearInterval(iv);
+    document.getElementById('err-msg').textContent=err.message;
+    showStep('error');
+  }
+}
+
+function slim(rows){
+  // Keep essential columns only to minimize URL size
+  return rows.map(r=>({
+    n:r['#'],ic:r.ICODE,nm:r['ITEM NAME'],it:r.ITYPE,mol:r.MOLECULE,
+    op:r.OPENING,sl:r.SELLING,cl:r.CLOSING,co:r.COSTING,
+    ii:r.IN_ITEMS,si:r.SELL_ITEMS,mv:+(r['MOVING_ITEM %']||0).toFixed(4),
+    ni:r['SM & NM_ITEMWISE'],nm2:r['SM & NM_MOL WISE'],va:r.VALUE,re:r.REMARK
+  }));
+}
+function expandSlim(rows){
+  return rows.map(r=>({'#':r.n,ICODE:r.ic,'ITEM NAME':r.nm,ITYPE:r.it,MOLECULE:r.mol,
+    OPENING:r.op,SELLING:r.sl,CLOSING:r.cl,COSTING:r.co,
+    IN_ITEMS:r.ii,SELL_ITEMS:r.si,'MOVING_ITEM %':r.mv,
+    'SM & NM_ITEMWISE':r.ni,'SM & NM_MOL WISE':r.nm2,VALUE:r.va,REMARK:r.re}));
+}
+function calcStats(data){
+  const nm=data.filter(r=>r.REMARK==='NON MOVING'),sm=data.filter(r=>r.REMARK==='SLOW MOVING');
+  const total=data.reduce((a,r)=>a+(r.VALUE||0),0);
+  return{total_items:data.length,total_value:total,nm_count:nm.length,nm_value:nm.reduce((a,r)=>a+(r.VALUE||0),0),sm_count:sm.length,sm_value:sm.reduce((a,r)=>a+(r.VALUE||0),0)};
+}
+
+/* Simple key compression for JSON */
+function miniCompress(s){
+  const M={'"ITEM NAME"':'"_A"','"MOLECULE"':'"_B"','"SM & NM_ITEMWISE"':'"_C"','"SM & NM_MOL WISE"':'"_D"','"MOVING_ITEM %"':'"_E"','"NON MOVING"':'"_F"','"SLOW MOVING"':'"_G"','"FAST MOVING"':'"_H"','"Grand Total"':'"_I"','"NON MOVING"':'"_F"','"TOTAL %"':'"_J"','"NM %"':'"_K"','"SM %"':'"_L"','"OPENING"':'"_M"','"SELLING"':'"_N"','"CLOSING"':'"_O"','"COSTING"':'"_P"','"IN_ITEMS"':'"_Q"','"SELL_ITEMS"':'"_R"','"VALUE"':'"_S"','"REMARK"':'"_T"','"ITYPE"':'"_U"','"ICODE"':'"_V"','"FALSE"':'"_W"','"duStats"':'"_X"','"lafStats"':'"_Y"','"summary"':'"_Z"','"total_items"':'"_a"','"total_value"':'"_b"','"nm_count"':'"_c"','"nm_value"':'"_d"','"sm_count"':'"_e"','"sm_value"':'"_f"','"publishedAt"':'"_g"','"author"':'"_h"','"period"':'"_i"','"title"':'"_j"','"notes"':'"_k"'};
+  let out=s;for(const[k,v]of Object.entries(M))out=out.split(k).join(v);return out;
+}
+function miniDecompress(s){
+  const M={'"_A"':'"ITEM NAME"','"_B"':'"MOLECULE"','"_C"':'"SM & NM_ITEMWISE"','"_D"':'"SM & NM_MOL WISE"','"_E"':'"MOVING_ITEM %"','"_F"':'"NON MOVING"','"_G"':'"SLOW MOVING"','"_H"':'"FAST MOVING"','"_I"':'"Grand Total"','"_J"':'"TOTAL %"','"_K"':'"NM %"','"_L"':'"SM %"','"_M"':'"OPENING"','"_N"':'"SELLING"','"_O"':'"CLOSING"','"_P"':'"COSTING"','"_Q"':'"IN_ITEMS"','"_R"':'"SELL_ITEMS"','"_S"':'"VALUE"','"_T"':'"REMARK"','"_U"':'"ITYPE"','"_V"':'"ICODE"','"_W"':'"FALSE"','"_X"':'"duStats"','"_Y"':'"lafStats"','"_Z"':'"summary"','"_a"':'"total_items"','"_b"':'"total_value"','"_c"':'"nm_count"','"_d"':'"nm_value"','"_e"':'"sm_count"','"_f"':'"sm_value"','"_g"':'"publishedAt"','"_h"':'"author"','"_i"':'"period"','"_j"':'"title"','"_k"':'"notes"'};
+  let out=s;for(const[k,v]of Object.entries(M))out=out.split(k).join(v);return out;
+}
+
+/* ══ COPY LINK ══ */
+async function copyLink(){
+  const val=document.getElementById('share-link').value;
+  try{
+    await navigator.clipboard.writeText(val);
+    const btn=document.getElementById('copy-btn');
+    btn.textContent='✅ Copied!';btn.classList.add('copied');
+    setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('copied');},2500);
+    showToast('📋 Link copied to clipboard!','success');
+  }catch{
+    document.getElementById('share-link').select();
+    showToast('Manually select & copy the link above','info');
+  }
+}
+
+/* ══ LOAD SHARED REPORT ══ */
+async function loadSharedReport(encoded){
+  document.getElementById('upload-section-wrap').style.display='none';
+  document.getElementById('shared-banner').style.display='flex';
+  document.getElementById('version-pill').textContent='🔗 Shared View';
+  setProg(true,'Loading report...',30);
+
+  try{
+    await sleep(100);
+    const compressed=decodeURIComponent(escape(atob(encoded)));
+    const json=miniDecompress(compressed);
+    const payload=JSON.parse(json);
+    setProg(true,'Rendering dashboard...',80);await sleep(100);
+
+    processedDU  = payload.du  ? expandSlim(payload.du)  : [];
+    processedLAF = payload.laf ? expandSlim(payload.laf) : [];
+
+    const meta=payload.meta||{};
+    document.getElementById('shared-meta-text').textContent=
+      `Published by ${meta.author||'—'} · ${meta.period||''}`+(meta.notes?` · ${meta.notes}`:'');
+
+    // Show meta bar
+    document.getElementById('report-meta-bar').style.display='flex';
+    document.getElementById('meta-title').textContent =meta.title||'—';
+    document.getElementById('meta-author').textContent=meta.author||'—';
+    document.getElementById('meta-period').textContent=meta.period||'—';
+    document.getElementById('meta-date').textContent  =meta.at?new Date(meta.at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'—';
+
+    // Render with stored stats for accuracy
+    if(payload.duStats)  renderKPIsFromStats('du',  payload.duStats);
+    else                  renderKPIs('du',  processedDU);
+    if(payload.lafStats) renderKPIsFromStats('laf', payload.lafStats);
+    else                  renderKPIs('laf', processedLAF);
+
+    renderDonut('du',processedDU); renderDonut('laf',processedLAF);
+    renderBarChart('du',processedDU); renderBarChart('laf',processedLAF);
+
+    if(payload.summary){
+      renderSumTableDirect('du',  payload.summary.du);
+      renderSumTableDirect('laf', payload.summary.laf);
+    }
+    renderTable('du'); renderTable('laf');
+
+    setProg(false,'',100);
+    document.getElementById('dashboard').classList.add('visible');
+
+    const duTotal=payload.duStats?.total_items||0;
+    if(processedDU.length<duTotal)
+      showToast(`ℹ️ Showing ${processedDU.length} of ${duTotal} DU rows in table view`,'info');
+
+  }catch(err){
+    setProg(false,'',0);
+    document.getElementById('shared-banner').innerHTML=`<div class="sb-icon">❌</div><div><h3 style="color:#f87171">Failed to load</h3><p>${err.message}</p></div>`;
+  }
+}
+
+/* ══ DASHBOARD RENDER ══ */
+function renderAll(){
+  renderKPIs('du',processedDU);renderKPIs('laf',processedLAF);
+  renderDonut('du',processedDU);renderDonut('laf',processedLAF);
+  renderBarChart('du',processedDU);renderBarChart('laf',processedLAF);
+  renderSumTable('du');renderSumTable('laf');
+  renderTable('du');renderTable('laf');
+}
+
+const fmt=n=>'₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:0});
+const fmtK=n=>n>=1e7?'₹'+(n/1e7).toFixed(2)+'Cr':n>=1e5?'₹'+(n/1e5).toFixed(1)+'L':fmt(n);
+
+function renderKPIs(t,data){
+  const nm=data.filter(r=>r.REMARK==='NON MOVING'),sm=data.filter(r=>r.REMARK==='SLOW MOVING');
+  const total=data.reduce((a,r)=>a+(r.VALUE||0),0),nmV=nm.reduce((a,r)=>a+(r.VALUE||0),0),smV=sm.reduce((a,r)=>a+(r.VALUE||0),0);
+  _kpiHtml(t,data.length,total,nm.length,nmV,sm.length,smV);
+}
+function renderKPIsFromStats(t,s){_kpiHtml(t,s.total_items,s.total_value,s.nm_count,s.nm_value,s.sm_count,s.sm_value);}
+function _kpiHtml(t,items,total,nmCnt,nmV,smCnt,smV){
+  document.getElementById(t+'-kpis').innerHTML=`
+    <div class="kpi-card total"><div class="kpi-badge">TOTAL</div><div class="kpi-label">Total Stock Value</div><div class="kpi-value">${fmtK(total)}</div><div class="kpi-sub">${items.toLocaleString()} items</div></div>
+    <div class="kpi-card nm"><div class="kpi-badge">NON MOVING</div><div class="kpi-label">Non Moving Value</div><div class="kpi-value">${fmtK(nmV)}</div><div class="kpi-sub">${nmCnt.toLocaleString()} items · ${total?(nmV/total*100).toFixed(1):0}% of stock</div></div>
+    <div class="kpi-card sm"><div class="kpi-badge">SLOW MOVING</div><div class="kpi-label">Slow Moving Value</div><div class="kpi-value">${fmtK(smV)}</div><div class="kpi-sub">${smCnt.toLocaleString()} items · ${total?(smV/total*100).toFixed(1):0}% of stock</div></div>
+    <div class="kpi-card fm"><div class="kpi-badge">CRITICAL</div><div class="kpi-label">Locked Capital (NM+SM)</div><div class="kpi-value">${fmtK(nmV+smV)}</div><div class="kpi-sub">${total?((nmV+smV)/total*100).toFixed(1):0}% of total value</div></div>`;
+}
+
+function renderDonut(t,data){
+  const nm=data.filter(r=>r.REMARK==='NON MOVING').reduce((a,r)=>a+(r.VALUE||0),0);
+  const sm=data.filter(r=>r.REMARK==='SLOW MOVING').reduce((a,r)=>a+(r.VALUE||0),0);
+  const fm=data.filter(r=>r.REMARK==='FAST MOVING').reduce((a,r)=>a+(r.VALUE||0),0);
+  const total=nm+sm+fm;if(!total)return;
+  const segs=[{val:nm,color:'#ef4444',label:'Non Moving'},{val:sm,color:'#f59e0b',label:'Slow Moving'},{val:fm,color:'#22c55e',label:'Fast Moving'}];
+  const R=50,cx=65,cy=65,sw=18,circ=2*Math.PI*R;let off=0,paths='';
+  segs.forEach(s=>{const d=(s.val/total)*circ;paths+=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.color}" stroke-width="${sw}" stroke-dasharray="${d} ${circ-d}" stroke-dashoffset="${-off}" transform="rotate(-90 ${cx} ${cy})"/>`;off+=d;});
+  document.getElementById(t+'-donut').innerHTML=paths+`<text x="${cx}" y="${cy+4}" text-anchor="middle" fill="#e2e8f0" font-size="10" font-family="DM Mono,monospace">${total?((nm+sm)/total*100).toFixed(0):0}% at risk</text>`;
+  document.getElementById(t+'-legend').innerHTML=segs.map(s=>`<div class="legend-item"><div class="legend-dot" style="background:${s.color}"></div><span style="color:#94a3b8">${s.label}</span><span class="legend-val">${fmtK(s.val)}</span></div>`).join('');
+}
+
+function renderBarChart(t,data){
+  const byType={};data.forEach(r=>{if(!byType[r.ITYPE])byType[r.ITYPE]=0;byType[r.ITYPE]+=(r.VALUE||0);});
+  const sorted=Object.entries(byType).sort((a,b)=>b[1]-a[1]).slice(0,7),max=sorted[0]?.[1]||1;
+  const cols=['#3b82f6','#6366f1','#8b5cf6','#a855f7','#ec4899','#f43f5e','#ef4444'];
+  document.getElementById(t+'-bar').innerHTML=sorted.map(([n,v],i)=>`<div class="bar-row"><div class="bar-label-row"><span>${n.replace('PHARMACY ','')}</span><span>${fmtK(v)}</span></div><div class="bar-track"><div class="bar-fill" style="width:${v/max*100}%;background:${cols[i%cols.length]}"></div></div></div>`).join('');
+}
+
+function renderSumTable(t){renderSumTableDirect(t,buildSumData(processedDU,processedLAF)[t]);}
+function renderSumTableDirect(t,sd){
+  document.getElementById(t+'-sum-table').innerHTML=
+    `<thead><tr><th>ITYPE</th><th>Grand Total (₹)</th><th>NON MOVING (₹)</th><th>NM %</th><th>SLOW MOVING (₹)</th><th>SM %</th><th>NM+SM Total (₹)</th><th>%</th></tr></thead><tbody>`+
+    sd.map(r=>`<tr style="${r.ITYPE==='TOTAL'?'font-weight:700;background:rgba(59,130,246,0.08)':''}"><td>${r.ITYPE}</td><td class="mono">${fmt(r['Grand Total'])}</td><td class="mono" style="color:#f87171">${fmt(r['NON MOVING'])}</td><td class="mono" style="color:#f87171">${(r['NM %']*100).toFixed(1)}%</td><td class="mono" style="color:#fbbf24">${fmt(r['SLOW MOVING'])}</td><td class="mono" style="color:#fbbf24">${(r['SM %']*100).toFixed(1)}%</td><td class="mono">${fmt(r.TOTAL||0)}</td><td class="mono">${(r['TOTAL %']*100).toFixed(1)}%</td></tr>`).join('')+'</tbody>';
+}
+
+/* ══ DATA TABLES ══ */
+function getFiltered(t){
+  const data=t==='du'?processedDU:processedLAF,search=document.getElementById(t+'-search').value.toLowerCase(),filter=filterState[t];
+  return data.filter(r=>{
+    const mf=filter==='ALL'||r.REMARK===filter;
+    const ms=!search||String(r['ITEM NAME']||'').toLowerCase().includes(search)||String(r.MOLECULE||'').toLowerCase().includes(search)||String(r.ICODE||'').toLowerCase().includes(search);
+    return mf&&ms;
+  });
+}
+function renderTable(t){
+  const filtered=getFiltered(t),page=pageState[t],ps=pageState.pageSize,total=filtered.length,slice=filtered.slice((page-1)*ps,page*ps);
+  document.getElementById(t+'-table').innerHTML=
+    '<thead><tr><th>#</th><th>ICODE</th><th>Item Name</th><th>ITYPE</th><th>Opening</th><th>Selling</th><th>Closing</th><th>Costing(₹)</th><th>IN Items</th><th>Sell Items</th><th>Moving %</th><th>Item Status</th><th>Mol Status</th><th>Value(₹)</th><th>Remark</th></tr></thead><tbody>'+
+    slice.map(r=>`<tr><td style="color:var(--muted)">${r['#']||''}</td><td class="mono">${r.ICODE||''}</td><td style="min-width:150px;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(r['ITEM NAME']||'').replace(/"/g,"'")}">${r['ITEM NAME']||''}</td><td style="font-size:10px;color:var(--muted)">${(r.ITYPE||'').replace('PHARMACY ','')}</td><td class="mono">${r.OPENING||0}</td><td class="mono">${r.SELLING||0}</td><td class="mono">${r.CLOSING||0}</td><td class="mono">${(r.COSTING||0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td><td class="mono">${r.IN_ITEMS||0}</td><td class="mono">${r.SELL_ITEMS||0}</td><td class="mono">${((r['MOVING_ITEM %']||0)*100).toFixed(1)}%</td><td>${bdg(r['SM & NM_ITEMWISE'])}</td><td>${bdg(r['SM & NM_MOL WISE'])}</td><td class="mono">${(r.VALUE||0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td><td>${bdg(r.REMARK)}</td></tr>`).join('')+'</tbody>';
+  const tp=Math.ceil(total/ps)||1;
+  document.getElementById(t+'-pagination').innerHTML=`<span>${total===0?'No results':`${((page-1)*ps+1).toLocaleString()}–${Math.min(page*ps,total).toLocaleString()} of ${total.toLocaleString()} rows`}</span><div class="pag-btns"><button class="pag-btn" onclick="goPage('${t}',${page-1})" ${page<=1?'disabled':''}>←</button><button class="pag-btn" onclick="goPage('${t}',${page+1})" ${page>=tp?'disabled':''}>→</button></div>`;
+}
+function bdg(v){if(v==='NON MOVING')return'<span class="badge badge-nm">🔴 NM</span>';if(v==='SLOW MOVING')return'<span class="badge badge-sm">🟡 SM</span>';if(v==='FAST MOVING')return'<span class="badge badge-fm">🟢 FM</span>';return`<span class="badge" style="background:rgba(100,116,139,0.1);color:#64748b">${v||'—'}</span>`;}
+function goPage(t,page){const tp=Math.ceil(getFiltered(t).length/pageState.pageSize)||1;pageState[t]=Math.max(1,Math.min(page,tp));renderTable(t);}
+function setFilter(t,val,btn){filterState[t]=val;pageState[t]=1;btn.closest('.filter-row').querySelectorAll('.filter-btn').forEach(b=>b.className='filter-btn');btn.classList.add(val==='ALL'?'active-all':val==='NON MOVING'?'active-nm':'active-sm');renderTable(t);}
+
+/* ══ TABS / PROGRESS / TOAST ══ */
+function switchTab(name,e){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));(e||event).target.classList.add('active');document.getElementById('tab-'+name).classList.add('active');}
+function setProg(v,label,p){document.getElementById('progress-wrap').classList.toggle('visible',v);if(label)document.getElementById('progress-label').textContent=label;document.getElementById('progress-fill').style.width=p+'%';}
+let _tt;
+function showToast(msg,type='info'){const t=document.getElementById('toast');t.textContent=msg;t.className='toast show '+(type||'');clearTimeout(_tt);_tt=setTimeout(()=>t.classList.remove('show'),4000);}
+</script>
+</body>
+</html>
