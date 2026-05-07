@@ -345,8 +345,12 @@ window.addEventListener('DOMContentLoaded',()=>{
   const rawHash = window.location.href.split('#')[1] || '';
   let rid=null, mode='z';
 
-  if(rawHash.startsWith('g=')){
-    rid=rawHash.slice(2); mode='g';       // v6 GitHub Gist
+  if(rawHash.startsWith('jb=')){
+    rid=rawHash.slice(3); mode='jb';      // jsonblob
+  } else if(rawHash.startsWith('g=')){
+    rid=rawHash.slice(2); mode='g';       // GitHub Gist
+  } else if(rawHash.startsWith('dp=')){
+    rid=rawHash.slice(3); mode='dp';      // dpaste
   } else if(rawHash.startsWith('z=')){
     rid=rawHash.slice(2); mode='z';       // v5 pako
   } else if(rawHash.startsWith('d=')){
@@ -549,7 +553,7 @@ function expandBar(d){
   return d;
 }
 
-/* ── PUBLISH — GitHub Gist se short link ── */
+/* ── PUBLISH — Multiple free paste services + fallback ── */
 async function doPublish(){
   const title=document.getElementById('pub-title').value.trim()||'DU & LAF Report';
   const author=document.getElementById('pub-author').value.trim()||'—';
@@ -558,7 +562,7 @@ async function doPublish(){
 
   showStep('publishing');
   let p=0;const bar=document.getElementById('pub-prog');
-  const iv=setInterval(()=>{p=Math.min(p+3,70);bar.style.width=p+'%';},200);
+  const iv=setInterval(()=>{p=Math.min(p+2,65);bar.style.width=p+'%';},250);
 
   try{
     if(typeof pako==='undefined') throw new Error('Compression library load nahi hui. Page refresh karein.');
@@ -578,44 +582,74 @@ async function doPublish(){
       laf:slim(processedLAF)
     };
 
-    bar.style.width='40%'; await sleep(30);
-
+    bar.style.width='35%'; await sleep(30);
     const json=JSON.stringify(payload);
 
-    // Try GitHub Gist first (gives short link)
-    bar.style.width='55%';
-    document.querySelector('#step-publishing p').textContent='Uploading to Gist...';
+    // ═══ Try multiple paste services ═══
+    let shareUrl=null;
+    const base=window.location.origin+window.location.pathname;
+    const progressEl=document.querySelector('#step-publishing p');
 
-    let gistId=null;
+    // ── SERVICE 1: jsonblob.com (CORS friendly, no signup) ──
+    progressEl.textContent='Uploading data...';
+    bar.style.width='45%';
     try{
-      const gistRes=await fetch('https://api.github.com/gists',{
+      const res=await fetch('https://jsonblob.com/api/jsonBlob',{
         method:'POST',
-        headers:{'Content-Type':'application/json','Accept':'application/vnd.github+json'},
-        body:JSON.stringify({
-          description:`DU & LAF Report — ${title} | ${period}`,
-          public:true,
-          files:{'du_laf_report.json':{content:json}}
-        })
+        headers:{'Content-Type':'application/json','Accept':'application/json'},
+        body:json
       });
-      if(gistRes.ok){
-        const gistData=await gistRes.json();
-        gistId=gistData.id;
+      if(res.ok||res.status===201){
+        // ID is in Location header or URL
+        const loc=res.headers.get('Location')||'';
+        const blobId=loc.split('/').pop()||'';
+        if(blobId){
+          shareUrl=base+'#jb='+blobId;
+        }
       }
-    }catch(e){ /* fallback to hash URL */ }
+    }catch(e){/* try next */}
 
-    bar.style.width='85%'; await sleep(80);
+    // ── SERVICE 2: GitHub Gist (anonymous) ──
+    if(!shareUrl){
+      progressEl.textContent='Trying alternate upload...';
+      bar.style.width='60%';
+      try{
+        const res=await fetch('https://api.github.com/gists',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Accept':'application/vnd.github+json'},
+          body:JSON.stringify({description:'DU & LAF Report',public:true,files:{'r.json':{content:json}}})
+        });
+        if(res.ok){
+          const d=await res.json();
+          if(d.id) shareUrl=base+'#g='+d.id;
+        }
+      }catch(e){/* try next */}
+    }
 
-    let shareUrl;
-    if(gistId){
-      // Short Gist link
-      const base=window.location.origin+window.location.pathname;
-      shareUrl=base+'#g='+gistId;
-    } else {
-      // Fallback: compress + hash URL
-      document.querySelector('#step-publishing p').textContent='Gist failed, compressing...';
+    // ── SERVICE 3: dpaste.org ──
+    if(!shareUrl){
+      progressEl.textContent='Trying another service...';
+      bar.style.width='72%';
+      try{
+        const form=new URLSearchParams();
+        form.set('content',json);
+        form.set('syntax','json');
+        form.set('expiry_days','30');
+        const res=await fetch('https://dpaste.org/api/',{method:'POST',body:form});
+        if(res.ok){
+          const url=await res.text();
+          const dpId=url.trim().replace('https://dpaste.org/','').replace('/','');
+          if(dpId) shareUrl=base+'#dp='+dpId;
+        }
+      }catch(e){/* fallback */}
+    }
+
+    // ── FINAL FALLBACK: compressed hash URL ──
+    if(!shareUrl){
+      progressEl.textContent='Cloud upload failed. Creating compressed link...';
+      bar.style.width='80%';
       const compressed=pako.deflate(json);
       const encoded=toB64url(compressed);
-      const base=window.location.origin+window.location.pathname;
       shareUrl=base+'#z='+encoded;
     }
 
@@ -623,9 +657,9 @@ async function doPublish(){
     document.getElementById('share-link').value=shareUrl;
     showStep('done');
 
+    const isShort=!shareUrl.includes('#z=');
     const kb=(shareUrl.length/1024).toFixed(1);
-    const method=gistId?'Gist':'Compressed';
-    showToast(`✅ Link ready! (${method}, ${kb} KB)`, 'success');
+    showToast(isShort?'✅ Short link ready! Share anywhere.':'⚠️ Cloud upload fail hua. Long link bani — Test Open se check karo.', isShort?'success':'info');
 
   }catch(err){
     clearInterval(iv);
@@ -666,22 +700,39 @@ async function loadSharedReport(encoded, mode){
 
     let payload;
 
-    if(mode==='g'){
-      // v6: Load from GitHub Gist (short link)
+    if(mode==='jb'){
+      // jsonblob.com
+      setProg(true,'Loading from cloud...',30); await sleep(40);
+      const res=await fetch(`https://jsonblob.com/api/jsonBlob/${encoded}`,{
+        headers:{'Accept':'application/json'}
+      });
+      if(!res.ok) throw new Error(`Data load failed (${res.status}). Link expire ho gayi ho sakti hai.`);
+      payload=await res.json();
+
+    } else if(mode==='g'){
+      // GitHub Gist
       setProg(true,'Loading from Gist...',30); await sleep(40);
       const gistRes=await fetch(`https://api.github.com/gists/${encoded}`,{
         headers:{'Accept':'application/vnd.github+json'}
       });
-      if(!gistRes.ok) throw new Error(`Gist load failed (${gistRes.status}). Link expire ho gayi ho sakti hai.`);
+      if(!gistRes.ok) throw new Error(`Gist load failed (${gistRes.status}).`);
       const gistData=await gistRes.json();
       const fileKey=Object.keys(gistData.files)[0];
       let raw=gistData.files[fileKey].content;
-      // If truncated, fetch raw_url
       if(gistData.files[fileKey].truncated){
         const rawRes=await fetch(gistData.files[fileKey].raw_url);
         raw=await rawRes.text();
       }
       payload=JSON.parse(raw);
+
+    } else if(mode==='dp'){
+      // dpaste.org
+      setProg(true,'Loading from cloud...',30); await sleep(40);
+      const res=await fetch(`https://dpaste.org/${encoded}.txt`);
+      if(!res.ok) throw new Error(`Data load failed (${res.status}).`);
+      const raw=await res.text();
+      payload=JSON.parse(raw);
+
     } else if(mode==='z'){
       // v5: pako DEFLATE — wait up to 5s for pako to load
       let waited=0;
