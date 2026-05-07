@@ -6,8 +6,8 @@
 <title>DU & LAF Inventory Analyzer</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/5.0.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS@3.12.0/dist/pptxgen.bundle.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -458,6 +458,12 @@ function exportPDF(){
     const jsPDF=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
     if(!jsPDF) throw new Error('jsPDF library load nahi hui. Page refresh karein.');
     const doc=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+    // v5: autoTable(doc,opts), v3: doc.autoTable(opts) — support both
+    let autoTableFn;
+    if(typeof window.autoTable==='function') autoTableFn=function(d,o){window.autoTable(d,o);};
+    else if(typeof doc.autoTable==='function') autoTableFn=function(d,o){d.autoTable(o);};
+    else if(window.jspdfAutotable&&typeof window.jspdfAutotable.autoTable==='function') autoTableFn=function(d,o){window.jspdfAutotable.autoTable(d,o);};
+    if(!autoTableFn) throw new Error('AutoTable plugin load nahi hui. Page refresh karein.');
     const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight();
     const now=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
 
@@ -485,7 +491,7 @@ function exportPDF(){
     y=100;
     const duSum=buildSumData(processedDU,processedLAF);
     const duRows=duSum.du.map(r=>[r.ITYPE,fmtK(r['Grand Total']),fmtK(r['NON MOVING']),(r['NM %']*100).toFixed(1)+'%',fmtK(r['SLOW MOVING']),(r['SM %']*100).toFixed(1)+'%',fmtK(r.TOTAL),(r['TOTAL %']*100).toFixed(1)+'%']);
-    doc.autoTable({startY:y,head:[['ITYPE','Total Value','NM Value','NM%','SM Value','SM%','NM+SM','Total%']],body:duRows,
+    autoTableFn(doc,{startY:y,head:[['ITYPE','Total Value','NM Value','NM%','SM Value','SM%','NM+SM','Total%']],body:duRows,
       theme:'grid',styles:{fontSize:7,cellPadding:2,textColor:[200,200,200],fillColor:[17,24,39],lineColor:[30,41,59],lineWidth:0.3},
       headStyles:{fillColor:[59,130,246],textColor:[255,255,255],fontStyle:'bold',fontSize:7},
       alternateRowStyles:{fillColor:[28,37,53]},margin:{left:14,right:14}});
@@ -504,7 +510,7 @@ function exportPDF(){
 
     y=56;
     const lafRows=duSum.laf.map(r=>[r.ITYPE,fmtK(r['Grand Total']),fmtK(r['NON MOVING']),(r['NM %']*100).toFixed(1)+'%',fmtK(r['SLOW MOVING']),(r['SM %']*100).toFixed(1)+'%',fmtK(r.TOTAL),(r['TOTAL %']*100).toFixed(1)+'%']);
-    doc.autoTable({startY:y,head:[['ITYPE','Total Value','NM Value','NM%','SM Value','SM%','NM+SM','Total%']],body:lafRows,
+    autoTableFn(doc,{startY:y,head:[['ITYPE','Total Value','NM Value','NM%','SM Value','SM%','NM+SM','Total%']],body:lafRows,
       theme:'grid',styles:{fontSize:7,cellPadding:2,textColor:[200,200,200],fillColor:[17,24,39],lineColor:[30,41,59],lineWidth:0.3},
       headStyles:{fillColor:[52,211,153],textColor:[10,14,26],fontStyle:'bold',fontSize:7},
       alternateRowStyles:{fillColor:[28,37,53]},margin:{left:14,right:14}});
@@ -516,7 +522,7 @@ function exportPDF(){
     doc.text('DU — Full Dataset ('+processedDU.length+' items)',14,16);
     const duCols=['#','ICODE','ITEM NAME','ITYPE','OPENING','SELLING','CLOSING','COSTING','VALUE','REMARK'];
     const duData=processedDU.map(r=>duCols.map(c=>c==='VALUE'||c==='COSTING'?fmtK(r[c]||0):String(r[c]??'')));
-    doc.autoTable({startY:22,head:[duCols],body:duData,
+    autoTableFn(doc,{startY:22,head:[duCols],body:duData,
       theme:'grid',styles:{fontSize:5.5,cellPadding:1.5,textColor:[200,200,200],fillColor:[17,24,39],lineColor:[30,41,59],lineWidth:0.2,overflow:'ellipsize'},
       headStyles:{fillColor:[59,130,246],textColor:[255,255,255],fontStyle:'bold',fontSize:6},
       alternateRowStyles:{fillColor:[28,37,53]},margin:{left:8,right:8},
@@ -528,7 +534,7 @@ function exportPDF(){
     doc.setTextColor(52,211,153); doc.setFontSize(14); doc.setFont('helvetica','bold');
     doc.text('LAF — Full Dataset ('+processedLAF.length+' items)',14,16);
     const lafData=processedLAF.map(r=>duCols.map(c=>c==='VALUE'||c==='COSTING'?fmtK(r[c]||0):String(r[c]??'')));
-    doc.autoTable({startY:22,head:[duCols],body:lafData,
+    autoTableFn(doc,{startY:22,head:[duCols],body:lafData,
       theme:'grid',styles:{fontSize:5.5,cellPadding:1.5,textColor:[200,200,200],fillColor:[17,24,39],lineColor:[30,41,59],lineWidth:0.2,overflow:'ellipsize'},
       headStyles:{fillColor:[52,211,153],textColor:[10,14,26],fontStyle:'bold',fontSize:6},
       alternateRowStyles:{fillColor:[28,37,53]},margin:{left:8,right:8},
