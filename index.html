@@ -949,16 +949,10 @@ function rt(t){
   if(search)rows=rows.filter(function(r){return((r['ITEM NAME']||'')+(r.MOLECULE||'')+(r.ICODE||'')).toLowerCase().indexOf(search)!==-1;});
   var sz=ps.sz,pg=ps[t],total=rows.length,pages=Math.ceil(total/sz);
   var start=(pg-1)*sz,slice=rows.slice(start,start+sz);
-  var cols=['#','ICODE','ITEM NAME','ITYPE','MOLECULE','OPENING','SELLING','CLOSING','COSTING','IN_ITEMS','SELL_ITEMS','MOVING_ITEM %','SM & NM_ITEMWISE','VALUE','REMARK'];
-  var h='<thead><tr>'+cols.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody>';
+  var h='<thead><tr><th>#</th><th>ICODE</th><th>Item Name</th><th>ITYPE</th><th>Closing</th><th>Costing(\\u20b9)</th><th>Value(\\u20b9)</th><th>Remark</th></tr></thead><tbody>';
   slice.forEach(function(r){
     var rc=r.REMARK==='NON MOVING'?'rn':r.REMARK==='SLOW MOVING'?'rs':'rf';
-    h+='<tr>'+cols.map(function(c){
-      if(c==='REMARK')return '<td><span class="rb '+rc+'">'+r[c]+'</span></td>';
-      if(c==='VALUE'||c==='COSTING')return '<td style="font-family:DM Mono,monospace">'+fK(r[c]||0)+'</td>';
-      if(c==='MOVING_ITEM %')return '<td>'+(((r[c]||0)*100).toFixed(1))+'%</td>';
-      return '<td>'+(r[c]!=null?r[c]:'')+'</td>';
-    }).join('')+'</tr>';
+    h+='<tr><td>'+(r['#']||'')+'</td><td style="font-family:DM Mono,monospace">'+(r.ICODE||'')+'</td><td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(r['ITEM NAME']||'')+'</td><td style="font-size:10px;color:#64748b">'+(r.ITYPE||'').replace('PHARMACY ','')+'</td><td style="font-family:DM Mono,monospace">'+(r.CLOSING||0)+'</td><td style="font-family:DM Mono,monospace">'+fK(r.COSTING||0)+'</td><td style="font-family:DM Mono,monospace">'+fK(r.VALUE||0)+'</td><td><span class="rb '+rc+'">'+(r.REMARK||'')+'</span></td></tr>';
   });
   h+='</tbody>';document.getElementById(t==='du'?'dtt':'ltt').innerHTML=h;
   var pag='';
@@ -1081,8 +1075,8 @@ function getFiltered(t){
 function renderTable(t){
   const filtered=getFiltered(t),page=pageState[t],ps=pageState.pageSize,total=filtered.length,slice=filtered.slice((page-1)*ps,page*ps);
   document.getElementById(t+'-table').innerHTML=
-    '<thead><tr><th>#</th><th>ICODE</th><th>Item Name</th><th>ITYPE</th><th>Opening</th><th>Selling</th><th>Closing</th><th>Costing(₹)</th><th>IN Items</th><th>Sell Items</th><th>Moving %</th><th>Item Status</th><th>Mol Status</th><th>Value(₹)</th><th>Remark</th></tr></thead><tbody>'+
-    slice.map(r=>`<tr><td style="color:var(--muted)">${r['#']||''}</td><td class="mono">${r.ICODE||''}</td><td style="min-width:150px;max-width:210px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(r['ITEM NAME']||'').replace(/"/g,"'")}">${r['ITEM NAME']||''}</td><td style="font-size:10px;color:var(--muted)">${(r.ITYPE||'').replace('PHARMACY ','')}</td><td class="mono">${r.OPENING||0}</td><td class="mono">${r.SELLING||0}</td><td class="mono">${r.CLOSING||0}</td><td class="mono">${(r.COSTING||0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td><td class="mono">${r.IN_ITEMS||0}</td><td class="mono">${r.SELL_ITEMS||0}</td><td class="mono">${((r['MOVING_ITEM %']||0)*100).toFixed(1)}%</td><td>${bdg(r['SM & NM_ITEMWISE'])}</td><td>${bdg(r['SM & NM_MOL WISE'])}</td><td class="mono">${(r.VALUE||0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td><td>${bdg(r.REMARK)}</td></tr>`).join('')+'</tbody>';
+    '<thead><tr><th>#</th><th>ICODE</th><th>Item Name</th><th>ITYPE</th><th>Closing</th><th>Costing(₹)</th><th>Value(₹)</th><th>Remark</th></tr></thead><tbody>'+
+    slice.map(r=>`<tr><td style="color:var(--muted)">${r['#']||''}</td><td class="mono">${r.ICODE||''}</td><td style="min-width:180px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(r['ITEM NAME']||'').replace(/"/g,"'")}">${r['ITEM NAME']||''}</td><td style="font-size:10px;color:var(--muted)">${(r.ITYPE||'').replace('PHARMACY ','')}</td><td class="mono">${r.CLOSING||0}</td><td class="mono">${(r.COSTING||0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td><td class="mono">${(r.VALUE||0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td><td>${bdg(r.REMARK)}</td></tr>`).join('')+'</tbody>';
   const tp=Math.ceil(total/ps)||1;
   document.getElementById(t+'-pagination').innerHTML=`<span>${total===0?'No results':`${((page-1)*ps+1).toLocaleString()}–${Math.min(page*ps,total).toLocaleString()} of ${total.toLocaleString()} rows`}</span><div class="pag-btns"><button class="pag-btn" onclick="goPage('${t}',${page-1})" ${page<=1?'disabled':''}>←</button><button class="pag-btn" onclick="goPage('${t}',${page+1})" ${page>=tp?'disabled':''}>→</button></div>`;
 }
