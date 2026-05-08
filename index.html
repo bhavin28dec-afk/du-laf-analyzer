@@ -345,6 +345,9 @@ let processedDU=[], processedLAF=[];
 const pageState={du:1,laf:1,pageSize:50}, filterState={du:'ALL',laf:'ALL'};
 const SM_THRESHOLD=0.10;
 
+/* ══ ESSENTIAL ITYPEs — DU mein NM hai but essential hain, locked capital mein count nahi hoga ══ */
+const ESSENTIAL_ITYPES=['PHARMACY CVTS SURGICAL','OPTICALS','PHARMACY CATH LAB SURGICAL','PHARMACY KIT AND REAGENT'];
+
 /* ══ ON LOAD ══ */
 window.addEventListener('DOMContentLoaded',()=>{
   // No URL hash processing needed — shared reports are self-contained HTML files
@@ -477,14 +480,14 @@ function exportPDF(){
     doc.setFontSize(10); doc.text('Generated: '+now,W-60,42);
 
     // ── DU KPIs ──
-    const duSt=calcStats(processedDU), lafSt=calcStats(processedLAF);
+    const duSt=calcStats(processedDU,true), lafSt=calcStats(processedLAF,false);
     let y=68;
     doc.setFillColor(17,24,39); doc.roundedRect(14,y-4,W-28,28,3,3,'F');
     doc.setTextColor(96,165,250); doc.setFontSize(13); doc.setFont('helvetica','bold');
     doc.text('DU Overview',20,y+6);
     doc.setFontSize(9); doc.setFont('helvetica','normal');
     doc.setTextColor(200,200,200);
-    const duKpiText=`Total: ${fmtK(duSt.tv)} (${duSt.ti} items)  |  Non Moving: ${fmtK(duSt.nv)} (${duSt.nc})  |  Slow Moving: ${fmtK(duSt.sv)} (${duSt.sc})  |  Locked: ${fmtK(duSt.nv+duSt.sv)}`;
+    const duKpiText=`Total: ${fmtK(duSt.tv)} (${duSt.ti} items)  |  Non Moving: ${fmtK(duSt.nv-(duSt.ev||0))} (excl Essential)  |  Essential NM: ${fmtK(duSt.ev||0)}  |  Slow Moving: ${fmtK(duSt.sv)} (${duSt.sc})  |  Locked: ${fmtK((duSt.nv-(duSt.ev||0))+duSt.sv)}`;
     doc.text(duKpiText,20,y+18);
 
     // ── DU Summary Table ──
@@ -563,7 +566,7 @@ function exportPPT(){
     const BG='0A0E1A',SURF='111827',ACC='3B82F6',ACC2='6366F1',NM='EF4444',SM='F59E0B',FM='22C55E',TXT='E2E8F0',MUT='64748B';
     const now=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
 
-    const duSt=calcStats(processedDU),lafSt=calcStats(processedLAF);
+    const duSt=calcStats(processedDU,true),lafSt=calcStats(processedLAF,false);
     const duSum=buildSumData(processedDU,processedLAF);
 
     // ═══ SLIDE 1: TITLE ═══
@@ -577,11 +580,14 @@ function exportPPT(){
     // ═══ SLIDE 2: DU KPIs ═══
     s=pptx.addSlide();s.background={color:BG};
     s.addText('DU (Dead / Dormant Units) Overview',{x:0.5,y:0.3,w:12,h:0.6,fontSize:22,bold:true,color:ACC,fontFace:'Calibri'});
+    const duEssV=duSt.ev||0;
+    const duRealNmV=duSt.nv-duEssV;
+    const duLocked=duRealNmV+duSt.sv;
     const duCards=[
       {label:'Total Stock Value',val:fmtK(duSt.tv),sub:duSt.ti+' items',color:ACC},
-      {label:'Non Moving Value',val:fmtK(duSt.nv),sub:duSt.nc+' items',color:NM},
-      {label:'Slow Moving Value',val:fmtK(duSt.sv),sub:duSt.sc+' items',color:SM},
-      {label:'Locked Capital',val:fmtK(duSt.nv+duSt.sv),sub:(duSt.tv?((duSt.nv+duSt.sv)/duSt.tv*100).toFixed(1):0)+'%',color:'F472B6'}
+      {label:'Non Moving Value',val:fmtK(duRealNmV),sub:(duSt.nc-(duSt.ec||0))+' items (excl Essential)',color:NM},
+      {label:'Essential NM',val:fmtK(duEssV),sub:(duSt.ec||0)+' items · Not Locked',color:'38BDF8'},
+      {label:'Locked Capital',val:fmtK(duLocked),sub:(duSt.tv?((duLocked)/duSt.tv*100).toFixed(1):0)+'% · Essential excluded',color:'F472B6'}
     ];
     duCards.forEach((c,i)=>{
       const x=0.5+i*3.15;
@@ -694,15 +700,25 @@ function slim(rows){
     +(r.VALUE||0).toFixed(2),RM[r.REMARK]??0
   ]));
 }
-function calcStats(data){
+function calcStats(data,isDU){
   const nm=data.filter(r=>r.REMARK==='NON MOVING'),sm=data.filter(r=>r.REMARK==='SLOW MOVING');
   const total=data.reduce((a,r)=>a+(r.VALUE||0),0);
-  return{ti:data.length,tv:+total.toFixed(2),nc:nm.length,nv:+nm.reduce((a,r)=>a+(r.VALUE||0),0).toFixed(2),sc:sm.length,sv:+sm.reduce((a,r)=>a+(r.VALUE||0),0).toFixed(2)};
+  const s={ti:data.length,tv:+total.toFixed(2),nc:nm.length,nv:+nm.reduce((a,r)=>a+(r.VALUE||0),0).toFixed(2),sc:sm.length,sv:+sm.reduce((a,r)=>a+(r.VALUE||0),0).toFixed(2)};
+  if(isDU){
+    const essNm=nm.filter(r=>ESSENTIAL_ITYPES.includes(r.ITYPE));
+    s.ec=essNm.length;
+    s.ev=+essNm.reduce((a,r)=>a+(r.VALUE||0),0).toFixed(2);
+  }
+  return s;
 }
-function buildDonutData(data){
+function buildDonutData(data,isDU){
   const nm=data.filter(r=>r.REMARK==='NON MOVING').reduce((a,r)=>a+(r.VALUE||0),0);
   const sm=data.filter(r=>r.REMARK==='SLOW MOVING').reduce((a,r)=>a+(r.VALUE||0),0);
   const fm=data.filter(r=>r.REMARK==='FAST MOVING').reduce((a,r)=>a+(r.VALUE||0),0);
+  if(isDU){
+    const essNm=data.filter(r=>r.REMARK==='NON MOVING'&&ESSENTIAL_ITYPES.includes(r.ITYPE)).reduce((a,r)=>a+(r.VALUE||0),0);
+    return[+(nm-essNm).toFixed(2),+essNm.toFixed(2),+sm.toFixed(2),+fm.toFixed(2)]; // [realNM, essNM, SM, FM]
+  }
   return[+nm.toFixed(2),+sm.toFixed(2),+fm.toFixed(2)];
 }
 function buildBarData(data){
@@ -728,8 +744,8 @@ async function doPublish(){
     const payload=JSON.stringify({
       v:7,
       m:{t:title,a:author,p:period,n:notes,d:new Date().toISOString()},
-      ds:calcStats(processedDU),ls:calcStats(processedLAF),
-      dd:buildDonutData(processedDU),ld:buildDonutData(processedLAF),
+      ds:calcStats(processedDU,true),ls:calcStats(processedLAF,false),
+      dd:buildDonutData(processedDU,true),ld:buildDonutData(processedLAF,false),
       db:buildBarData(processedDU),lb:buildBarData(processedLAF),
       s:buildSumData(processedDU,processedLAF),
       du:slim(processedDU),laf:slim(processedLAF)
@@ -874,6 +890,18 @@ function sw(t,btn){document.querySelectorAll('.tc').forEach(function(c){c.classL
 function sf(t,f,btn){fs2[t]=f;ps[t]=1;btn.closest('.fr').querySelectorAll('.fb').forEach(function(b){b.className='fb';});var cls=f==='ALL'?'fa':f==='NON MOVING'?'fn':f==='SLOW MOVING'?'fs2':'ff';btn.classList.add(cls);rt(t);}
 function rk(t,s){
   var el=document.getElementById(t==='du'?'dk':'lk');
+  if(t==='du'&&s.ev!=null){
+    var essV=s.ev||0,realNmV=s.nv-essV,locked=realNmV+s.sv;
+    var realNmP=s.tv?((realNmV/s.tv)*100).toFixed(1):0;
+    var smP=s.tv?((s.sv/s.tv)*100).toFixed(1):0;
+    var lkP=s.tv?((locked/s.tv)*100).toFixed(1):0;
+    el.innerHTML='<div class="kpi"><div class="kl">Total Stock Value</div><div class="kv">'+fK(s.tv)+'</div><div class="ks">'+s.ti.toLocaleString()+' items</div><div class="kb" style="background:rgba(59,130,246,0.15);color:#60a5fa">TOTAL</div></div>'
+    +'<div class="kpi"><div class="kl">Non Moving Value</div><div class="kv" style="color:var(--nm)">'+fK(realNmV)+'</div><div class="ks">'+(s.nc-(s.ec||0))+' items \\xb7 '+realNmP+'% of stock</div><div class="kb" style="background:rgba(239,68,68,0.15);color:#f87171">NON MOVING</div></div>'
+    +'<div class="kpi"><div class="kl">Essential NM (Not Locked)</div><div class="kv" style="color:#38bdf8">'+fK(essV)+'</div><div class="ks">'+(s.ec||0)+' items \\xb7 CVTS, Cath Lab, Kit, Opticals</div><div class="kb" style="background:rgba(56,189,248,0.15);color:#38bdf8">ESSENTIAL</div></div>'
+    +'<div class="kpi"><div class="kl">Slow Moving Value</div><div class="kv" style="color:var(--sm)">'+fK(s.sv)+'</div><div class="ks">'+s.sc+' items \\xb7 '+smP+'% of stock</div><div class="kb" style="background:rgba(245,158,11,0.15);color:#fbbf24">SLOW MOVING</div></div>'
+    +'<div class="kpi"><div class="kl">Locked Capital (NM+SM)</div><div class="kv" style="color:#f472b6">'+fK(locked)+'</div><div class="ks">'+lkP+'% \\xb7 Essential NM excluded</div><div class="kb" style="background:rgba(244,114,182,0.15);color:#f472b6">CRITICAL</div></div>';
+    return;
+  }
   var nmP=s.tv?((s.nv/s.tv)*100).toFixed(1):0;
   var smP=s.tv?((s.sv/s.tv)*100).toFixed(1):0;
   var lk=s.nv+s.sv;var lkP=s.tv?((lk/s.tv)*100).toFixed(1):0;
@@ -883,12 +911,22 @@ function rk(t,s){
   +'<div class="kpi"><div class="kl">Locked Capital (NM+SM)</div><div class="kv" style="color:#f472b6">'+fK(lk)+'</div><div class="ks">'+lkP+'% of total value</div><div class="kb" style="background:rgba(244,114,182,0.15);color:#f472b6">CRITICAL</div></div>';
 }
 function rdn(t,d){
-  var total=d[0]+d[1]+d[2];if(!total)return;
-  var segs=[{v:d[0],c:'#ef4444',l:'Non Moving'},{v:d[1],c:'#f59e0b',l:'Slow Moving'},{v:d[2],c:'#22c55e',l:'Fast Moving'}];
+  var segs,total;
+  if(t==='du'&&d.length===4){
+    // DU: [realNM, essNM, SM, FM]
+    total=d[0]+d[1]+d[2]+d[3];if(!total)return;
+    segs=[{v:d[0],c:'#ef4444',l:'Non Moving'},{v:d[1],c:'#38bdf8',l:'Essential (NM)'},{v:d[2],c:'#f59e0b',l:'Slow Moving'},{v:d[3],c:'#22c55e',l:'Fast Moving'}];
+    var atRisk=total?((d[0]+d[2])/total*100).toFixed(0):0;
+  } else {
+    // LAF: [NM, SM, FM]
+    total=d[0]+d[1]+d[2];if(!total)return;
+    segs=[{v:d[0],c:'#ef4444',l:'Non Moving'},{v:d[1],c:'#f59e0b',l:'Slow Moving'},{v:d[2],c:'#22c55e',l:'Fast Moving'}];
+    var atRisk=total?((d[0]+d[1])/total*100).toFixed(0):0;
+  }
   var R=50,cx=65,cy=65,sw2=18,circ=2*Math.PI*R,off=0,paths='';
-  segs.forEach(function(s){var d2=(s.v/total)*circ;paths+='<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="'+s.c+'" stroke-width="'+sw2+'" stroke-dasharray="'+d2+' '+(circ-d2)+'" stroke-dashoffset="'+(-off)+'" transform="rotate(-90 '+cx+' '+cy+')"/>';off+=d2;});
-  document.getElementById(t==='du'?'dd':'ld2').innerHTML=paths+'<text x="'+cx+'" y="'+(cy+4)+'" text-anchor="middle" fill="#e2e8f0" font-size="10" font-family="DM Mono,monospace">'+((d[0]+d[1])/total*100).toFixed(0)+'% at risk</text>';
-  document.getElementById(t==='du'?'dl':'ll').innerHTML=segs.map(function(s){return '<div class="li"><div class="ld" style="background:'+s.c+'"></div><span style="color:#94a3b8">'+s.l+'</span><span class="lv">'+fK(s.v)+'</span></div>';}).join('');
+  segs.forEach(function(s){if(!s.v)return;var d2=(s.v/total)*circ;paths+='<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="'+s.c+'" stroke-width="'+sw2+'" stroke-dasharray="'+d2+' '+(circ-d2)+'" stroke-dashoffset="'+(-off)+'" transform="rotate(-90 '+cx+' '+cy+')"/>';off+=d2;});
+  document.getElementById(t==='du'?'dd':'ld2').innerHTML=paths+'<text x="'+cx+'" y="'+(cy+4)+'" text-anchor="middle" fill="#e2e8f0" font-size="10" font-family="DM Mono,monospace">'+atRisk+'% at risk</text>';
+  document.getElementById(t==='du'?'dl':'ll').innerHTML=segs.filter(function(s){return s.v>0;}).map(function(s){return '<div class="li"><div class="ld" style="background:'+s.c+'"></div><span style="color:#94a3b8">'+s.l+'</span><span class="lv">'+fK(s.v)+'</span></div>';}).join('');
 }
 function rbc(t,bars){
   if(!bars||!bars.length)return;var max=bars[0][1]||1;
@@ -959,9 +997,28 @@ const fmtK=n=>n>=1e7?'₹'+(n/1e7).toFixed(2)+'Cr':n>=1e5?'₹'+(n/1e5).toFixed(
 function renderKPIs(t,data){
   const nm=data.filter(r=>r.REMARK==='NON MOVING'),sm=data.filter(r=>r.REMARK==='SLOW MOVING');
   const total=data.reduce((a,r)=>a+(r.VALUE||0),0),nmV=nm.reduce((a,r)=>a+(r.VALUE||0),0),smV=sm.reduce((a,r)=>a+(r.VALUE||0),0);
-  _kpiHtml(t,data.length,total,nm.length,nmV,sm.length,smV);
+  if(t==='du'){
+    // DU: Split NM into essential and non-essential
+    const essNm=nm.filter(r=>ESSENTIAL_ITYPES.includes(r.ITYPE));
+    const realNm=nm.filter(r=>!ESSENTIAL_ITYPES.includes(r.ITYPE));
+    const essV=essNm.reduce((a,r)=>a+(r.VALUE||0),0);
+    const realNmV=realNm.reduce((a,r)=>a+(r.VALUE||0),0);
+    const locked=realNmV+smV; // Essential NM excluded from locked capital
+    _kpiHtmlDU(t,data.length,total,nm.length,nmV,essNm.length,essV,realNm.length,realNmV,sm.length,smV,locked);
+  } else {
+    _kpiHtml(t,data.length,total,nm.length,nmV,sm.length,smV);
+  }
 }
 function renderKPIsFromStats(t,s){_kpiHtml(t,s.total_items,s.total_value,s.nm_count,s.nm_value,s.sm_count,s.sm_value);}
+
+function _kpiHtmlDU(t,items,total,nmCnt,nmV,essCnt,essV,realNmCnt,realNmV,smCnt,smV,locked){
+  document.getElementById(t+'-kpis').innerHTML=`
+    <div class="kpi-card total"><div class="kpi-badge">TOTAL</div><div class="kpi-label">Total Stock Value</div><div class="kpi-value">${fmtK(total)}</div><div class="kpi-sub">${items.toLocaleString()} items</div></div>
+    <div class="kpi-card nm"><div class="kpi-badge">NON MOVING</div><div class="kpi-label">Non Moving Value</div><div class="kpi-value">${fmtK(realNmV)}</div><div class="kpi-sub">${realNmCnt.toLocaleString()} items · ${total?(realNmV/total*100).toFixed(1):0}% of stock</div></div>
+    <div class="kpi-card" style="border-top:3px solid #38bdf8"><div class="kpi-badge" style="background:rgba(56,189,248,0.15);color:#38bdf8">ESSENTIAL</div><div class="kpi-label">Essential NM (Not Locked)</div><div class="kpi-value" style="color:#38bdf8">${fmtK(essV)}</div><div class="kpi-sub">${essCnt.toLocaleString()} items · CVTS, Cath Lab, Kit, Opticals</div></div>
+    <div class="kpi-card sm"><div class="kpi-badge">SLOW MOVING</div><div class="kpi-label">Slow Moving Value</div><div class="kpi-value">${fmtK(smV)}</div><div class="kpi-sub">${smCnt.toLocaleString()} items · ${total?(smV/total*100).toFixed(1):0}% of stock</div></div>
+    <div class="kpi-card fm"><div class="kpi-badge">CRITICAL</div><div class="kpi-label">Locked Capital (NM+SM)</div><div class="kpi-value">${fmtK(locked)}</div><div class="kpi-sub">${total?(locked/total*100).toFixed(1):0}% · Essential NM excluded</div></div>`;
+}
 function _kpiHtml(t,items,total,nmCnt,nmV,smCnt,smV){
   document.getElementById(t+'-kpis').innerHTML=`
     <div class="kpi-card total"><div class="kpi-badge">TOTAL</div><div class="kpi-label">Total Stock Value</div><div class="kpi-value">${fmtK(total)}</div><div class="kpi-sub">${items.toLocaleString()} items</div></div>
@@ -971,6 +1028,22 @@ function _kpiHtml(t,items,total,nmCnt,nmV,smCnt,smV){
 }
 
 function renderDonut(t,data){
+  if(t==='du'){
+    // DU: Split NM into essential and real NM
+    const essNm=data.filter(r=>r.REMARK==='NON MOVING'&&ESSENTIAL_ITYPES.includes(r.ITYPE)).reduce((a,r)=>a+(r.VALUE||0),0);
+    const realNm=data.filter(r=>r.REMARK==='NON MOVING'&&!ESSENTIAL_ITYPES.includes(r.ITYPE)).reduce((a,r)=>a+(r.VALUE||0),0);
+    const sm=data.filter(r=>r.REMARK==='SLOW MOVING').reduce((a,r)=>a+(r.VALUE||0),0);
+    const fm=data.filter(r=>r.REMARK==='FAST MOVING').reduce((a,r)=>a+(r.VALUE||0),0);
+    const total=realNm+essNm+sm+fm;if(!total)return;
+    const segs=[{val:realNm,color:'#ef4444',label:'Non Moving'},{val:essNm,color:'#38bdf8',label:'Essential (NM)'},{val:sm,color:'#f59e0b',label:'Slow Moving'},{val:fm,color:'#22c55e',label:'Fast Moving'}];
+    const R=50,cx=65,cy=65,sw=18,circ=2*Math.PI*R;let off=0,paths='';
+    segs.forEach(s=>{if(!s.val)return;const d=(s.val/total)*circ;paths+=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.color}" stroke-width="${sw}" stroke-dasharray="${d} ${circ-d}" stroke-dashoffset="${-off}" transform="rotate(-90 ${cx} ${cy})"/>`;off+=d;});
+    const atRisk=total?((realNm+sm)/total*100).toFixed(0):0;
+    document.getElementById(t+'-donut').innerHTML=paths+`<text x="${cx}" y="${cy+4}" text-anchor="middle" fill="#e2e8f0" font-size="10" font-family="DM Mono,monospace">${atRisk}% at risk</text>`;
+    document.getElementById(t+'-legend').innerHTML=segs.filter(s=>s.val>0).map(s=>`<div class="legend-item"><div class="legend-dot" style="background:${s.color}"></div><span style="color:#94a3b8">${s.label}</span><span class="legend-val">${fmtK(s.val)}</span></div>`).join('');
+    return;
+  }
+  // LAF: normal donut
   const nm=data.filter(r=>r.REMARK==='NON MOVING').reduce((a,r)=>a+(r.VALUE||0),0);
   const sm=data.filter(r=>r.REMARK==='SLOW MOVING').reduce((a,r)=>a+(r.VALUE||0),0);
   const fm=data.filter(r=>r.REMARK==='FAST MOVING').reduce((a,r)=>a+(r.VALUE||0),0);
