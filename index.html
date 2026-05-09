@@ -147,6 +147,8 @@
   .table-header-row h3{font-size:14px;font-weight:700;}
   .filter-row{display:flex;gap:6px;}
   .filter-btn{padding:5px 12px;border-radius:100px;font-size:11px;font-weight:600;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;font-family:'Sora',sans-serif;}
+  .sort-btn{padding:5px 12px;border-radius:100px;font-size:11px;font-weight:600;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;font-family:'Sora',sans-serif;}
+  .sort-btn.active-sort{background:rgba(168,85,247,0.2);border-color:rgba(168,85,247,0.5);color:#c084fc;}
   .filter-btn.active-nm{background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.4);color:#f87171;}
   .filter-btn.active-sm{background:rgba(245,158,11,0.15);border-color:rgba(245,158,11,0.4);color:#fbbf24;}
   .filter-btn.active-all{background:rgba(59,130,246,0.15);border-color:rgba(59,130,246,0.4);color:#60a5fa;}
@@ -259,14 +261,14 @@
     </div>
     <div class="tab-content" id="tab-du">
       <div class="table-wrap">
-        <div class="table-header-row"><h3>DU — Full Dataset</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="search-box" id="du-search" placeholder="🔍 Search item / molecule..." oninput="renderTable('du')"><div class="filter-row"><button class="filter-btn active-all" onclick="setFilter('du','ALL',this)">All</button><button class="filter-btn" onclick="setFilter('du','NON MOVING',this)">🔴 NM</button><button class="filter-btn" onclick="setFilter('du','SLOW MOVING',this)">🟡 SM</button><button class="filter-btn" onclick="setFilter('du','FAST MOVING',this)">🟢 FM</button></div></div></div>
+        <div class="table-header-row"><h3>DU — Full Dataset</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="search-box" id="du-search" placeholder="🔍 Search item / molecule..." oninput="renderTable('du')"><div class="filter-row"><button class="filter-btn active-all" onclick="setFilter('du','ALL',this)">All</button><button class="filter-btn" onclick="setFilter('du','NON MOVING',this)">🔴 NM</button><button class="filter-btn" onclick="setFilter('du','SLOW MOVING',this)">🟡 SM</button><button class="filter-btn" onclick="setFilter('du','FAST MOVING',this)">🟢 FM</button></div><div class="filter-row" id="du-sort-row"><button class="sort-btn" onclick="setSort('du','high',this)">↓ High Value</button><button class="sort-btn" onclick="setSort('du','low',this)">↑ Low Value</button></div></div></div>
         <div style="overflow-x:auto"><table id="du-table"></table></div>
         <div class="pagination" id="du-pagination"></div>
       </div>
     </div>
     <div class="tab-content" id="tab-laf">
       <div class="table-wrap">
-        <div class="table-header-row"><h3>LAF — Full Dataset</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="search-box" id="laf-search" placeholder="🔍 Search item / molecule..." oninput="renderTable('laf')"><div class="filter-row"><button class="filter-btn active-all" onclick="setFilter('laf','ALL',this)">All</button><button class="filter-btn" onclick="setFilter('laf','NON MOVING',this)">🔴 NM</button><button class="filter-btn" onclick="setFilter('laf','SLOW MOVING',this)">🟡 SM</button><button class="filter-btn" onclick="setFilter('laf','FAST MOVING',this)">🟢 FM</button></div></div></div>
+        <div class="table-header-row"><h3>LAF — Full Dataset</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="search-box" id="laf-search" placeholder="🔍 Search item / molecule..." oninput="renderTable('laf')"><div class="filter-row"><button class="filter-btn active-all" onclick="setFilter('laf','ALL',this)">All</button><button class="filter-btn" onclick="setFilter('laf','NON MOVING',this)">🔴 NM</button><button class="filter-btn" onclick="setFilter('laf','SLOW MOVING',this)">🟡 SM</button><button class="filter-btn" onclick="setFilter('laf','FAST MOVING',this)">🟢 FM</button></div><div class="filter-row" id="laf-sort-row"><button class="sort-btn" onclick="setSort('laf','high',this)">↓ High Value</button><button class="sort-btn" onclick="setSort('laf','low',this)">↑ Low Value</button></div></div></div>
         <div style="overflow-x:auto"><table id="laf-table"></table></div>
         <div class="pagination" id="laf-pagination"></div>
       </div>
@@ -342,7 +344,7 @@
 <script>
 /* ══ STATE ══ */
 let processedDU=[], processedLAF=[];
-const pageState={du:1,laf:1,pageSize:50}, filterState={du:'ALL',laf:'ALL'};
+const pageState={du:1,laf:1,pageSize:50}, filterState={du:'ALL',laf:'ALL'}, sortState={du:'none',laf:'none'}; // 'none','high','low'
 const SM_THRESHOLD=0.10;
 
 /* ══ ESSENTIAL ITYPEs — DU mein NM hai but essential hain, locked capital mein count nahi hoga ══ */
@@ -380,7 +382,15 @@ function processLAF(rows){
   return rows;
 }
 function processDU(rows){
-  rows.forEach(r=>{r.IN_ITEMS=(r.OPENING||0)+(r.PURCHASE||0)+(r['Dept Transfer In']||0)+(r['ST Dept In']||0)+(r['Add QTY']||0);r.SELL_ITEMS=(r.SELLING||0)-(r['SELLING RETURN']||0);r['MOVING_ITEM %']=pct(r.SELL_ITEMS,r.IN_ITEMS);r['SM & NM_ITEMWISE']=cls(r.SELL_ITEMS,r['MOVING_ITEM %']);});
+  // REDUCE/WARD ISSUE QTY column has -ve values = actual ward sell/consumption
+  // -100 means 100 qty was issued to ward = 100 sell
+  rows.forEach(r=>{
+    const wardIssue=Math.abs(r['REDUCE/WARD ISSUE QTY']||0); // -100 becomes 100
+    r.IN_ITEMS=(r.OPENING||0)+(r.PURCHASE||0)+(r['Dept Transfer In']||0)+(r['ST Dept In']||0)+(r['Add QTY']||0);
+    r.SELL_ITEMS=(r.SELLING||0)-(r['SELLING RETURN']||0)+wardIssue;
+    r['MOVING_ITEM %']=pct(r.SELL_ITEMS,r.IN_ITEMS);
+    r['SM & NM_ITEMWISE']=cls(r.SELL_ITEMS,r['MOVING_ITEM %']);
+  });
   const mol={};
   rows.forEach(r=>{const k=String(r.MOLECULE);if(!mol[k])mol[k]={i:0,s:0};mol[k].i+=r.IN_ITEMS;mol[k].s+=r.SELL_ITEMS;});
   rows.forEach(r=>{const k=String(r.MOLECULE),mp=pct(mol[k].s,mol[k].i);r['MOLECULE IN']=mol[k].i;r['MOLECULE SELL']=mol[k].s;r['MOVING_MOL %']=mp;r['SM & NM_MOL WISE']=cls(mol[k].s,mp);r.VALUE=r.COSTING||0;r.REMARK=rmk(r['SM & NM_ITEMWISE'],r['SM & NM_MOL WISE']);});
@@ -876,8 +886,8 @@ tr:hover td{background:rgba(59,130,246,0.04);}
 <div class="tw"><div class="th"><h3>DU \u2014 Department-wise</h3></div><div style="overflow-x:auto"><table id="dst"></table></div></div>
 <div class="tw"><div class="th"><h3>LAF \u2014 Department-wise</h3></div><div style="overflow-x:auto"><table id="lst"></table></div></div>
 </div>
-<div class="tc" id="t-du"><div class="tw"><div class="th"><h3>DU \u2014 Full Dataset</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="sx" id="ds" placeholder="\u{1f50d} Search..." oninput="rt('du')"><div class="fr"><button class="fb fa" onclick="sf('du','ALL',this)">All</button><button class="fb" onclick="sf('du','NON MOVING',this)">\u{1f534} NM</button><button class="fb" onclick="sf('du','SLOW MOVING',this)">\u{1f7e1} SM</button><button class="fb" onclick="sf('du','FAST MOVING',this)">\u{1f7e2} FM</button></div></div></div><div style="overflow-x:auto"><table id="dtt"></table></div><div class="pg" id="dp"></div></div></div>
-<div class="tc" id="t-laf"><div class="tw"><div class="th"><h3>LAF \u2014 Full Dataset</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="sx" id="ls" placeholder="\u{1f50d} Search..." oninput="rt('laf')"><div class="fr"><button class="fb fa" onclick="sf('laf','ALL',this)">All</button><button class="fb" onclick="sf('laf','NON MOVING',this)">\u{1f534} NM</button><button class="fb" onclick="sf('laf','SLOW MOVING',this)">\u{1f7e1} SM</button><button class="fb" onclick="sf('laf','FAST MOVING',this)">\u{1f7e2} FM</button></div></div></div><div style="overflow-x:auto"><table id="ltt"></table></div><div class="pg" id="lp"></div></div></div>
+<div class="tc" id="t-du"><div class="tw"><div class="th"><h3>DU \u2014 Full Dataset</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="sx" id="ds" placeholder="\u{1f50d} Search..." oninput="rt('du')"><div class="fr"><button class="fb fa" onclick="sf('du','ALL',this)">All</button><button class="fb" onclick="sf('du','NON MOVING',this)">\u{1f534} NM</button><button class="fb" onclick="sf('du','SLOW MOVING',this)">\u{1f7e1} SM</button><button class="fb" onclick="sf('du','FAST MOVING',this)">\u{1f7e2} FM</button></div><div class="fr" id="dsr"><button class="fb" onclick="ss('du','high',this)">\u2193 High Value</button><button class="fb" onclick="ss('du','low',this)">\u2191 Low Value</button></div></div></div><div style="overflow-x:auto"><table id="dtt"></table></div><div class="pg" id="dp"></div></div></div>
+<div class="tc" id="t-laf"><div class="tw"><div class="th"><h3>LAF \u2014 Full Dataset</h3><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input class="sx" id="ls" placeholder="\u{1f50d} Search..." oninput="rt('laf')"><div class="fr"><button class="fb fa" onclick="sf('laf','ALL',this)">All</button><button class="fb" onclick="sf('laf','NON MOVING',this)">\u{1f534} NM</button><button class="fb" onclick="sf('laf','SLOW MOVING',this)">\u{1f7e1} SM</button><button class="fb" onclick="sf('laf','FAST MOVING',this)">\u{1f7e2} FM</button></div><div class="fr" id="lsr"><button class="fb" onclick="ss('laf','high',this)">\u2193 High Value</button><button class="fb" onclick="ss('laf','low',this)">\u2191 Low Value</button></div></div></div><div style="overflow-x:auto"><table id="ltt"></table></div><div class="pg" id="lp"></div></div></div>
 </div>
 `+`<`+`script>
 var D=`+finalData+`;
@@ -888,6 +898,8 @@ function ex(rows){if(!rows||!rows.length)return[];return rows.map(function(r){re
 function fK(v){if(v>=1e7)return'\\u20b9'+(v/1e7).toFixed(2)+'Cr';if(v>=1e5)return'\\u20b9'+(v/1e5).toFixed(1)+'L';if(v>=1e3)return'\\u20b9'+(v/1e3).toFixed(1)+'K';return'\\u20b9'+Math.round(v);}
 function sw(t,btn){document.querySelectorAll('.tc').forEach(function(c){c.classList.remove('active');});document.querySelectorAll('.tab').forEach(function(c){c.classList.remove('active');});document.getElementById('t-'+t).classList.add('active');btn.classList.add('active');}
 function sf(t,f,btn){fs2[t]=f;ps[t]=1;btn.closest('.fr').querySelectorAll('.fb').forEach(function(b){b.className='fb';});var cls=f==='ALL'?'fa':f==='NON MOVING'?'fn':f==='SLOW MOVING'?'fs2':'ff';btn.classList.add(cls);rt(t);}
+var ss2={du:'none',laf:'none'};
+function ss(t,dir,btn){if(ss2[t]===dir){ss2[t]='none';btn.classList.remove('fa');}else{ss2[t]=dir;document.getElementById(t==='du'?'dsr':'lsr').querySelectorAll('.fb').forEach(function(b){b.classList.remove('fa');});btn.classList.add('fa');}ps[t]=1;rt(t);}
 function rk(t,s){
   var el=document.getElementById(t==='du'?'dk':'lk');
   if(t==='du'&&s.ev!=null){
@@ -947,6 +959,9 @@ function rt(t){
   var rows=data;
   if(filter!=='ALL')rows=rows.filter(function(r){return r.REMARK===filter;});
   if(search)rows=rows.filter(function(r){return((r['ITEM NAME']||'')+(r.MOLECULE||'')+(r.ICODE||'')).toLowerCase().indexOf(search)!==-1;});
+  var srt=ss2[t];
+  if(srt==='high')rows=rows.slice().sort(function(a,b){return(b.VALUE||0)-(a.VALUE||0);});
+  else if(srt==='low')rows=rows.slice().sort(function(a,b){return(a.VALUE||0)-(b.VALUE||0);});
   var sz=ps.sz,pg=ps[t],total=rows.length,pages=Math.ceil(total/sz);
   var start=(pg-1)*sz,slice=rows.slice(start,start+sz);
   var h='<thead><tr><th>#</th><th>ICODE</th><th>Item Name</th><th>ITYPE</th><th>Closing</th><th>Costing(\\u20b9)</th><th>Value(\\u20b9)</th><th>Remark</th></tr></thead><tbody>';
@@ -1073,7 +1088,12 @@ function getFiltered(t){
   });
 }
 function renderTable(t){
-  const filtered=getFiltered(t),page=pageState[t],ps=pageState.pageSize,total=filtered.length,slice=filtered.slice((page-1)*ps,page*ps);
+  let filtered=getFiltered(t);
+  // Apply sort
+  const sort=sortState[t];
+  if(sort==='high') filtered=[...filtered].sort((a,b)=>(b.VALUE||0)-(a.VALUE||0));
+  else if(sort==='low') filtered=[...filtered].sort((a,b)=>(a.VALUE||0)-(b.VALUE||0));
+  const page=pageState[t],ps=pageState.pageSize,total=filtered.length,slice=filtered.slice((page-1)*ps,page*ps);
   document.getElementById(t+'-table').innerHTML=
     '<thead><tr><th>#</th><th>ICODE</th><th>Item Name</th><th>ITYPE</th><th>Closing</th><th>Costing(₹)</th><th>Value(₹)</th><th>Remark</th></tr></thead><tbody>'+
     slice.map(r=>`<tr><td style="color:var(--muted)">${r['#']||''}</td><td class="mono">${r.ICODE||''}</td><td style="min-width:180px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(r['ITEM NAME']||'').replace(/"/g,"'")}">${r['ITEM NAME']||''}</td><td style="font-size:10px;color:var(--muted)">${(r.ITYPE||'').replace('PHARMACY ','')}</td><td class="mono">${r.CLOSING||0}</td><td class="mono">${(r.COSTING||0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td><td class="mono">${(r.VALUE||0).toLocaleString('en-IN',{maximumFractionDigits:2})}</td><td>${bdg(r.REMARK)}</td></tr>`).join('')+'</tbody>';
@@ -1083,6 +1103,12 @@ function renderTable(t){
 function bdg(v){if(v==='NON MOVING')return'<span class="badge badge-nm">🔴 NM</span>';if(v==='SLOW MOVING')return'<span class="badge badge-sm">🟡 SM</span>';if(v==='FAST MOVING')return'<span class="badge badge-fm">🟢 FM</span>';return`<span class="badge" style="background:rgba(100,116,139,0.1);color:#64748b">${v||'—'}</span>`;}
 function goPage(t,page){const tp=Math.ceil(getFiltered(t).length/pageState.pageSize)||1;pageState[t]=Math.max(1,Math.min(page,tp));renderTable(t);}
 function setFilter(t,val,btn){filterState[t]=val;pageState[t]=1;btn.closest('.filter-row').querySelectorAll('.filter-btn').forEach(b=>b.className='filter-btn');btn.classList.add(val==='ALL'?'active-all':val==='NON MOVING'?'active-nm':'active-sm');renderTable(t);}
+function setSort(t,dir,btn){
+  // Toggle: if already active, remove sort
+  if(sortState[t]===dir){sortState[t]='none';btn.classList.remove('active-sort');}
+  else{sortState[t]=dir;document.getElementById(t+'-sort-row').querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('active-sort'));btn.classList.add('active-sort');}
+  pageState[t]=1;renderTable(t);
+}
 
 /* ══ TABS / PROGRESS / TOAST ══ */
 function switchTab(name,e){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));(e||event).target.classList.add('active');document.getElementById('tab-'+name).classList.add('active');}
